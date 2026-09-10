@@ -167,6 +167,10 @@ function findMedia(data, isRegex = false, filter = false, timer = false) {
     if (!isRegex) {
         // 获取头部信息
         data.header = getResponseHeadersValue(data);
+        // 不嗅探 ts 分片 单个分片没有播放价值 且一个视频几百片会把列表刷满
+        // 只拦分片本身 m3u8 清单照常捕获 解析页会自己去拉分片
+        // 后缀在 Ext 里可以关掉 但分片常以 video/mp2t 走 type 检查漏进来 所以两处都拦
+        if (G.skipTs && (ext == "ts" || isTsType(data.header?.type))) { return; }
         //检查后缀
         if (!filter && ext != undefined) {
             filter = CheckExtension(ext, data.header?.size);
@@ -872,10 +876,22 @@ function operatorCheck(size, Obj) {
     }
 }
 
+// ts 分片常见的 Content-Type header.type 已经小写并去掉了 charset 参数
+const TS_TYPE = new Set(["video/mp2t", "audio/mp2t", "video/vnd.dlna.mpeg-tts", "application/x-mpegts", "application/mp2t"]);
+
+/**
+ * 是否为 ts 分片的 Content-Type
+ * @param {String|undefined} type
+ * @returns {Boolean}
+ */
+function isTsType(type) {
+    return type != undefined && TS_TYPE.has(type);
+}
+
 /**
  * 检查扩展名和大小
- * @param {String} ext 
- * @param {Number} size 
+ * @param {String} ext
+ * @param {Number} size
  * @returns {Boolean|String}
  */
 function CheckExtension(ext, size) {

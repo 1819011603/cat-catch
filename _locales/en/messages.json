@@ -113,6 +113,21 @@
   "autoDownload": {
     "message": "Auto Download"
   },
+  "skipTs": {
+    "message": "Skip ts"
+  },
+  "catchTs": {
+    "message": "Catch ts"
+  },
+  "skipTsOn": {
+    "message": "ts segment sniffing off. m3u8 manifests are still captured"
+  },
+  "skipTsOff": {
+    "message": "ts segment sniffing on. The list may fill up with segments"
+  },
+  "skipTsTips": {
+    "message": "Do not sniff ts segments. A single segment is not playable on its own, and one video can flood the list with hundreds of them. m3u8/mpd manifests are still captured; the parser pulls the segments itself."
+  },
   "forward": {
     "message": "Forward"
   },

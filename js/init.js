@@ -101,6 +101,7 @@ G.OptionLists = {
     downFileName: "${title}.${ext}",    // 默认下载文件名
     css: "",    // 自定义css
     checkDuplicates: true,  // 检查重复项
+    skipTs: true,   // 不嗅探 ts 分片 单个分片没有播放价值 且会把列表刷满
     enable: true,   // 启用总开关
     downActive: !G.isMobile,    // 手机端默认不启用 后台下载
     downAutoClose: true,    // 下载后自动关闭

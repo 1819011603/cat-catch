@@ -113,6 +113,21 @@
   "autoDownload": {
     "message": "自动下载"
   },
+  "skipTs": {
+    "message": "不嗅探ts"
+  },
+  "catchTs": {
+    "message": "嗅探ts"
+  },
+  "skipTsOn": {
+    "message": "已关闭 ts 分片嗅探，m3u8 清单仍会捕获"
+  },
+  "skipTsOff": {
+    "message": "已开启 ts 分片嗅探，列表可能被大量分片刷满"
+  },
+  "skipTsTips": {
+    "message": "不嗅探 ts 分片。单个分片没有播放价值，一个视频几百片会把资源列表刷满。m3u8/mpd 清单照常捕获，解析页会自己去拉分片。"
+  },
   "forward": {
     "message": "转发"
   },

@@ -788,6 +788,13 @@ $("#MobileUserAgent").click(function () {
     updateButton();
   });
 });
+// 不嗅探 ts 分片 全局开关 storage.onChanged 会把新值同步给后台的 G
+$("#skipTs").click(function () {
+  G.skipTs = !G.skipTs;
+  chrome.storage.sync.set({ skipTs: G.skipTs });
+  skipTsButton();
+  Tips(G.skipTs ? i18n.skipTsOn : i18n.skipTsOff, 3000);
+});
 // 自动下载
 $("#AutoDown").click(function () {
   chrome.runtime.sendMessage({ Message: "autoDown", tabId: G.tabId }, function () {
@@ -1014,6 +1021,7 @@ const interval = setInterval(async function () {
   });
   // 获取模拟手机 自动下载 捕获 状态
   updateButton();
+  skipTsButton();
 
   // 上一次设定的倍数
   $("#playbackRate").val(G.playbackRate);
@@ -1050,6 +1058,11 @@ const interval = setInterval(async function () {
 window.addEventListener('beforeunload', function () {
   chrome.runtime.sendMessage(chrome.runtime.id, { Message: "clearRedundant" });
 });
+
+// 不嗅探 ts 按钮文字 显示的是点下去会变成什么状态
+function skipTsButton() {
+  $("#skipTs").html(G.skipTs ? i18n.catchTs : i18n.skipTs);
+}
 
 // 按钮状态更新
 function updateButton() {
