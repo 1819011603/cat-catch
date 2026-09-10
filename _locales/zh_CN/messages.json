@@ -130,6 +130,9 @@
   "locateNoMedia": {
     "message": "页面上没有正在播放的媒体，或页面还没加载完"
   },
+  "locateNoContact": {
+    "message": "联系不上页面，请刷新页面后重试（重载扩展后，已打开的页面里旧脚本会失效）"
+  },
   "locateNotFound": {
     "message": "没找到对应的资源，可能它在你打开猫抓之前就已经播完了"
   },

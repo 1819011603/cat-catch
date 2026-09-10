@@ -621,7 +621,13 @@ $mergeDown.click(function () {
 // 定位 只勾选当前页面正在播放的那一份媒体
 $('#locate').click(function () {
   chrome.tabs.sendMessage(G.tabId, { Message: "getPlayingMedia" }, { frameId: 0 }, function (response) {
-    if (chrome.runtime.lastError || !response || !response.list || !response.list.length) {
+    // 联系不上页面脚本 和页面上真没媒体 是两回事
+    // 扩展重载后 已打开页面里的旧脚本会失效 必须刷新页面才会注入新的
+    if (chrome.runtime.lastError || !response) {
+      Tips(i18n.locateNoContact, 5000);
+      return;
+    }
+    if (!response.list || !response.list.length) {
       Tips(i18n.locateNoMedia, 3000);
       return;
     }
