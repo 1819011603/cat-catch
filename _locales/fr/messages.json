@@ -171,6 +171,9 @@
   "locateNoContact": {
     "message": "Cannot reach the page. Reload the page and try again (reloading the extension orphans the script in already-open pages)"
   },
+  "locateStale": {
+    "message": "The Cat Catch script in this page is stale. Reload the page (F5) and try again — reloading the extension does not update scripts already running in open pages"
+  },
   "locateNotFound": {
     "message": "No matching resource. It may have finished loading before you opened Cat Catch"
   },

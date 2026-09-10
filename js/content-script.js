@@ -106,13 +106,13 @@
              *     抖音的控制栏离 video 很远 6 层罩不住 只能全页找
              *     全页搜就必须用更具体的形状 成对时间比单个时间具体得多 才不会乱认
              * @param {HTMLMediaElement} media
-             * @returns {Number} 拿不到返回 0
+             * @returns {Object} { value, why } 拿不到 value 为 0 why 说明卡在哪一步
              */
             const uiDuration = function (media) {
                 const log = function (result, why) {
                     console.log("%c[猫抓定位] 界面时长", "color:#1a73e8;font-weight:bold",
                         `进度 ${media.currentTime} -> ${result || "拿不到"}`, why);
-                    return result;
+                    return { value: result, why: why };
                 };
                 const current = media.currentTime;
                 // 还没开始播 没有可对照的数 一律不采信
@@ -187,6 +187,7 @@
                     // srcObject 挂 MediaSource 的播放器(抖音就是)按规范 currentSrc 就是空串
                     // 以 readyState 判断这个元素里到底有没有媒体 空占位的 video 标签 readyState 为 0
                     if (!media.currentSrc && !media.readyState) { return; }
+                    const ui = uiDuration(media);
                     // MSE 播放时 duration 取的是 mediaSource.duration 播放器不设它就是 NaN
                     // 而 sendResponse 走 JSON NaN 和 Infinity 都会变成 null 到不了对面
                     // 所以多带几个来源 并把原值转成字符串一起送过去 定位失败时才说得清是哪一步没拿到
@@ -197,7 +198,8 @@
                         durationText: String(media.duration),
                         seekableEnd: range(media.seekable),
                         bufferedEnd: range(media.buffered),
-                        uiDuration: uiDuration(media),
+                        uiDuration: ui.value,
+                        uiDurationWhy: ui.why,
                         currentTime: media.currentTime,
                         videoWidth: media.videoWidth ?? 0,
                         videoHeight: media.videoHeight ?? 0,
