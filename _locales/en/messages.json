@@ -113,6 +113,35 @@
   "autoDownload": {
     "message": "Auto Download"
   },
+  "locate": {
+    "message": "Locate"
+  },
+  "locateDone": {
+    "message": "Selected $num$ resource(s) currently playing (match tier $tier$)",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      },
+      "tier": {
+        "content": "$2"
+      }
+    }
+  },
+  "locateNoMedia": {
+    "message": "No media playing on this page, or the page has not finished loading"
+  },
+  "locateNotFound": {
+    "message": "No matching resource. It may have finished loading before you opened Cat Catch"
+  },
+  "locateNeedMse": {
+    "message": "This page plays via MSE, so the src is a fake blob URL. Enable \"MSE Track\" under More Features, reload the page, and try again"
+  },
+  "mseTrack": {
+    "message": "MSE Track"
+  },
+  "closeMseTrack": {
+    "message": "Close MSE Track"
+  },
   "skipTs": {
     "message": "Skip ts"
   },

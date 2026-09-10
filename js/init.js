@@ -210,6 +210,7 @@ G.scriptList.set("catch.js", { key: "catch", refresh: true, allFrames: true, wor
 G.scriptList.set("recorder.js", { key: "recorder", refresh: false, allFrames: true, world: "MAIN", name: i18n.videoRecording, off: i18n.closeRecording, i18n: true, tabId: new Set() });
 G.scriptList.set("recorder2.js", { key: "recorder2", refresh: false, allFrames: false, world: "ISOLATED", name: i18n.screenCapture, off: i18n.closeCapture, i18n: true, tabId: new Set() });
 G.scriptList.set("webrtc.js", { key: "webrtc", refresh: true, allFrames: true, world: "MAIN", name: i18n.recordWebRTC, off: i18n.closeRecording, i18n: true, tabId: new Set() });
+G.scriptList.set("mse.js", { key: "mse", refresh: true, allFrames: true, world: "MAIN", name: i18n.mseTrack, off: i18n.closeMseTrack, i18n: false, tabId: new Set() });
 
 // ffmpeg
 G.ffmpegConfig = {

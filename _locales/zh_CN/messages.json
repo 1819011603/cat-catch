@@ -113,6 +113,35 @@
   "autoDownload": {
     "message": "自动下载"
   },
+  "locate": {
+    "message": "定位"
+  },
+  "locateDone": {
+    "message": "已勾选正在播放的 $num$ 条资源（匹配级别 $tier$）",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      },
+      "tier": {
+        "content": "$2"
+      }
+    }
+  },
+  "locateNoMedia": {
+    "message": "页面上没有正在播放的媒体，或页面还没加载完"
+  },
+  "locateNotFound": {
+    "message": "没找到对应的资源，可能它在你打开猫抓之前就已经播完了"
+  },
+  "locateNeedMse": {
+    "message": "该页面用 MSE 播放，地址是 blob 假地址。请在「更多功能」里开启「MSE 追踪」并刷新页面后重试"
+  },
+  "mseTrack": {
+    "message": "MSE追踪"
+  },
+  "closeMseTrack": {
+    "message": "关闭MSE追踪"
+  },
   "skipTs": {
     "message": "不嗅探ts"
   },

@@ -618,6 +618,38 @@ $mergeDown.click(function () {
   }
   catDownload(checkedData, { ffmpeg: "merge" })
 });
+// 定位 只勾选当前页面正在播放的那一份媒体
+$('#locate').click(function () {
+  chrome.tabs.sendMessage(G.tabId, { Message: "getPlayingMedia" }, { frameId: 0 }, function (response) {
+    if (chrome.runtime.lastError || !response || !response.list || !response.list.length) {
+      Tips(i18n.locateNoMedia, 3000);
+      return;
+    }
+    // 优先正在播的 全都暂停时退回页面上所有媒体元素
+    const playing = response.list.filter(media => media.playing);
+    const targets = playing.length ? playing : response.list;
+
+    const srcList = targets.map(media => media.src);
+    let mseUrls = targets.reduce((all, media) => all.concat(media.mseUrls ?? []), []);
+    // srcObject 直接挂 MediaSource 的页面没有 blob 地址可对应 只能用这批无主映射
+    if (!mseUrls.length) { mseUrls = response.orphanMseUrls ?? []; }
+
+    const { picked, tier } = pickPlayingMedia([...getData().values()], srcList, mseUrls);
+
+    if (!picked.length) {
+      // 全是 blob 且没有 MSE 映射 说明钩子没挂上 提示开启并刷新
+      const blobOnly = srcList.every(src => !src || src.startsWith("blob:"));
+      Tips(blobOnly && !mseUrls.length ? i18n.locateNeedMse : i18n.locateNotFound, 5000);
+      return;
+    }
+
+    getData().forEach(function (data) {
+      data.checked = picked.includes(data);
+    });
+    mergeDownButton();
+    Tips(i18n("locateDone", [picked.length, tier]), 3000);
+  });
+});
 // 一键下载 自动挑出本页主媒体 并选择合适的下载路径
 $('#oneClickDown').click(function () {
   const { mode, picked, candidates, ambiguous, maybeNoAudio } = pickMainMedia([...getData().values()]);

@@ -3,6 +3,11 @@
     var _videoSrc = [];
     var _key = new Set();
     var m3u8Text = new Map();
+    // mse.js 上报的映射 blob地址 -> 喂给它的真实URL集合
+    // 只在本 frame 的页面生命周期内有效 刷新即失效 正好也是这份映射的有效期
+    var mseMap = new Map();
+    const MSE_MAP_MAX = 32;
+    const MSE_URL_MAX = 200;
     chrome.runtime.onMessage.addListener(function (Message, sender, sendResponse) {
         if (chrome.runtime.lastError) { return; }
         // 获取页面视频对象
@@ -52,6 +57,38 @@
                 return true;
             }
             sendResponse({ count: 0 });
+            return true;
+        }
+        /**
+         * 定位 返回本页媒体元素的播放状态与真实来源
+         * src 是 blob: 时 mseUrls 给出 mse.js 反查到的真实地址 没开 MSE 追踪则为空
+         */
+        if (Message.Message == "getPlayingMedia") {
+            const list = [];
+            const collect = function (root) {
+                root.querySelectorAll("video, audio").forEach(function (media) {
+                    if (!media.currentSrc) { return; }
+                    list.push({
+                        src: media.currentSrc,
+                        playing: !media.paused,
+                        duration: media.duration,
+                        currentTime: media.currentTime,
+                        videoWidth: media.videoWidth ?? 0,
+                        videoHeight: media.videoHeight ?? 0,
+                        type: media.tagName.toLowerCase(),
+                        mseUrls: [...(mseMap.get(media.currentSrc) ?? [])]
+                    });
+                });
+            };
+            collect(document);
+            // 同源 iframe 里的媒体 跨源的拿不到 那种情况下 iframe 自己的 content-script 才有数据
+            document.querySelectorAll("iframe").forEach(function (iframe) {
+                try {
+                    iframe.contentDocument && collect(iframe.contentDocument);
+                } catch (e) { }
+            });
+            // srcObject 挂 MediaSource 时没有 blob 地址 mse.js 用空串上报 统一兜给调用方
+            sendResponse({ list: list, orphanMseUrls: [...(mseMap.get("") ?? [])] });
             return true;
         }
         // 速度控制
@@ -232,7 +269,7 @@
         });
     };
     window.addEventListener("message", (event) => {
-        const action = ["catCatchAddMedia", "catCatchAddKey", "catCatchFFmpeg", "catCatchFFmpegResult", "catCatchCloseScript"];
+        const action = ["catCatchAddMedia", "catCatchAddKey", "catCatchFFmpeg", "catCatchFFmpegResult", "catCatchCloseScript", "catCatchMSE"];
         if (!event.data || !event.data.action || event.origin !== window.location.origin || !action.includes(event.data.action)) { return; }
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -293,6 +330,20 @@
         if (event.data.action == "catCatchFFmpegResult") {
             if (!event.data.state || !event.data.tabId) { return; }
             chrome.runtime.sendMessage({ Message: "catCatchFFmpegResult", ...event.data });
+        }
+        // mse.js 的映射上报 只在本 frame 内存里存一份 不惊动后台
+        if (event.data.action == "catCatchMSE") {
+            if (typeof event.data.url != "string" || !event.data.url) { return; }
+            const blobSrc = typeof event.data.blobSrc == "string" ? event.data.blobSrc : "";
+            let urls = mseMap.get(blobSrc);
+            if (!urls) {
+                // blob 地址会随播放不断新建 只留最近的若干个
+                if (mseMap.size >= MSE_MAP_MAX) { mseMap.delete(mseMap.keys().next().value); }
+                urls = new Set();
+                mseMap.set(blobSrc, urls);
+            }
+            if (urls.size < MSE_URL_MAX) { urls.add(event.data.url); }
+            return;
         }
         if (event.data.action == "catCatchCloseScript") {
             if (!event.data.script || !event.isTrusted) { return; }
