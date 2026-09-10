@@ -196,6 +196,9 @@ button:disabled,
   img.invoke {
     content: url(../img/invoke-dark.svg);
   }
+  img.forward {
+    content: url(../img/invoke-dark.svg);
+  }
   img.send {
     content: url(../img/send-dark.svg);
   }

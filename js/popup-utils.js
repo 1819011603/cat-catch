@@ -48,6 +48,90 @@ function isMediaExt(ext) {
 function isMedia(data) {
     return isMediaExt(data.ext) || data.type?.startsWith("video/") || data.type?.startsWith("audio/");
 }
+
+// 一键下载 同组内第二名体积达到第一名此比例 视为无法区分主次
+const PICK_AMBIGUOUS_RATIO = 0.8;
+const PICK_AUDIO_EXT = ['mp3', 'm4a', 'aac', 'opus', 'wav', 'weba', 'ogg', 'flac'];
+const PICK_VIDEO_EXT = ['mp4', 'webm', 'mov', 'mkv', 'flv', 'ogv', '3gp', 'mpeg', 'avi', 'ts', 'm4s'];
+
+/**
+ * 判断资源是音轨还是视频轨
+ * Content-Type 优先于后缀 都判定不了按视频处理 由歧义检查兜底
+ * @param {Object} data 资源对象
+ * @returns {String} "audio" | "video"
+ */
+function trackKind(data) {
+    if (data.type?.startsWith("audio/")) { return "audio"; }
+    if (data.type?.startsWith("video/")) { return "video"; }
+    if (PICK_AUDIO_EXT.includes(data.ext)) { return "audio"; }
+    if (PICK_VIDEO_EXT.includes(data.ext)) { return "video"; }
+    return "video";
+}
+
+/**
+ * 一键下载 从资源列表中挑出本页主媒体
+ * 纯通用启发式 只看 Content-Type / 后缀 / 体积 / 清单结构 不依赖任何站点规则
+ * 纯函数 不修改传入的资源对象
+ * @param {Array} list 当前标签的资源数组
+ * @returns {Object} { mode, picked, candidates, ambiguous, maybeNoAudio }
+ *   mode "parser" 交给 m3u8/mpd 解析页 | "merge" 音视频分轨合并 | "direct" 直接下载 | "none" 无候选
+ *   ambiguous 为 true 时 picked 为空 应由用户从 candidates 中确认
+ *   maybeNoAudio 为 true 表示只挑到视频轨但列表里还有其他资源 产物可能无声
+ */
+function pickMainMedia(list) {
+    const result = { mode: "none", picked: [], candidates: [], ambiguous: false, maybeNoAudio: false };
+    if (!list || !list.length) { return result; }
+
+    const size = data => data._size ?? 0;
+    const bySizeDesc = (a, b) => size(b) - size(a);
+    // 第一名明显大于第二名才算主次分明
+    const distinct = group => group.length < 2 || size(group[1]) < size(group[0]) * PICK_AMBIGUOUS_RATIO;
+
+    // Step 1 候选池 只留媒体和清单 滤掉图片 JSON key
+    const pool = list.filter(data => isMedia(data) || isM3U8(data) || isMPD(data));
+    if (!pool.length) { return result; }
+
+    // Step 2 清单优先 存在清单时分片交由解析页自己去拉 不进候选
+    const mpd = pool.filter(isMPD);
+    const m3u8 = pool.filter(isM3U8);
+    const manifests = mpd.length ? mpd : m3u8;
+    if (manifests.length) {
+        // 解析页自带码率选择与音轨配对 唯一时直接交给它
+        result.mode = "parser";
+        result.candidates = manifests;
+        manifests.length === 1 ? result.picked = [manifests[0]] : result.ambiguous = true;
+        return result;
+    }
+
+    // Step 3 无清单 纯文件 按体积降序分音视频两组
+    const video = pool.filter(data => trackKind(data) === "video").sort(bySizeDesc);
+    const audio = pool.filter(data => trackKind(data) === "audio").sort(bySizeDesc);
+
+    // 音视频分轨 各取最大一条送去合并
+    if (video.length && audio.length) {
+        result.mode = "merge";
+        result.candidates = [...video, ...audio];
+        if (distinct(video) && distinct(audio)) {
+            result.picked = [video[0], audio[0]];
+        } else {
+            result.ambiguous = true;
+        }
+        return result;
+    }
+
+    // 只有一组 取最大一条直接下载
+    const single = video.length ? video : audio;
+    result.mode = "direct";
+    result.candidates = single;
+    if (distinct(single)) {
+        result.picked = [single[0]];
+        // 音轨可能被站点标成 video/* 而混进视频组 提示用户自查
+        result.maybeNoAudio = !audio.length && pool.length > 1;
+    } else {
+        result.ambiguous = true;
+    }
+    return result;
+}
 /**
  * ari2a RPC发送一套资源
  * @param {object} data 资源对象

@@ -84,6 +84,25 @@ playerList.forEach(function (item, key) {
     $("#PlayerTemplate").append(`<option value="${key}">${item.name}</option>`);
 });
 
+// 转发目标预设
+// 只收录已验证过地址格式的服务 其余请自行填写模板
+forwardList = new Map();
+forwardList.set("tips", { name: i18n.forwardPreset, template: "" });
+forwardList.set("default", { name: i18n.default + " / " + i18n.disable, template: "" });
+// 显式写法 参数看得见改得动 exists 守卫保证空值时整段消失 不留 &referer=&origin=
+forwardList.set("utoolsPlayer", {
+    name: "utools video-player",
+    template: "https://utools-d5h.pages.dev/video-player?url=${url|to:urlEncode}${playReferer|to:urlEncode|exists:'%26referer%3D*'}${playOrigin|to:urlEncode|exists:'%26origin%3D*'}"
+});
+// 简写形式 ${playUrl} 等价于上面三段拼起来 适合不需要改参数名的场合
+forwardList.set("utoolsPlayerShort", {
+    name: "utools video-player (" + i18n.forwardShort + ")",
+    template: "https://utools-d5h.pages.dev/video-player?url=${playUrl|to:urlEncode}"
+});
+forwardList.forEach(function (item, key) {
+    $("#forwardTemplate").append(`<option value="${key}">${item.name}</option>`);
+});
+
 // 增加后缀 类型 正则表达式
 function Gethtml(Type, Param = new Object()) {
     let html = "";
@@ -161,6 +180,17 @@ $("#PlayerTemplate").change(function () {
         $("#Player").val(template);
         chrome.storage.sync.set({ Player: template });
     }
+});
+// 转发模板
+$("#forwardTemplate").change(function () {
+    const Value = $(this).val();
+    if (forwardList.has(Value) && Value != "tips") {
+        const template = forwardList.get(Value).template;
+        $("#forwardText").val(template);
+        chrome.storage.sync.set({ forwardText: template });
+    }
+    // 复位到提示项 否则停在已选项上时 再选同一项不会触发 change 预设就应用不上
+    $(this).val("tips");
 });
 //失去焦点 保存自动清理数 模拟手机User Agent 自定义播放调用模板
 let debounce2 = undefined;

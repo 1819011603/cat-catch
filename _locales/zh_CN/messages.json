@@ -113,6 +113,36 @@
   "autoDownload": {
     "message": "自动下载"
   },
+  "forward": {
+    "message": "转发"
+  },
+  "forwardTips": {
+    "message": "把资源地址按模板拼成一个网址，在新标签打开。地址会发送给你填写的第三方服务，请自行确认其可信。可用变量：$${playReferer} 和 $${playOrigin} 是带回落的来源地址（请求头抓不到时用页面地址），$${playUrl} 是「媒体地址+referer+origin」的简写。"
+  },
+  "forwardShort": {
+    "message": "简写"
+  },
+  "forwardPreset": {
+    "message": "预设模板"
+  },
+  "forwardPlaceholder": {
+    "message": "例如 https://example.com/player?url=$${playUrl|to:urlEncode}"
+  },
+  "forwardNotSet": {
+    "message": "还没有设置转发模板，请先到选项页配置"
+  },
+  "oneClickDown": {
+    "message": "一键下载"
+  },
+  "oneClickSent": {
+    "message": "已开始下载"
+  },
+  "oneClickAmbiguous": {
+    "message": "有多个候选，已为你勾选，确认后点下载或合并"
+  },
+  "oneClickMaybeNoAudio": {
+    "message": "只找到视频轨，若无声请勾选音频后点合并"
+  },
   "onlineMerge": {
     "message": "在线合并"
   },

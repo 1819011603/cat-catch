@@ -103,6 +103,22 @@ class Template {
             userAgent: G.userAgent || navigator.userAgent,
         };
         trimData.title = trimData.title.replace(/[/\\]/g, "_");
+        // 在线播放器常用的复合地址 媒体地址后拼接 referer 与 origin 空值自动省略
+        // 配合 |to:urlEncode 使用 例如 https://example.com/player?url=${playUrl|to:urlEncode}
+        // Referer 请求头常常抓不到(range 请求 / no-referrer 策略 / SW 重启丢失缓存)
+        // 此时回落到页面地址 origin 缺失则从 referer 推导 保证在线播放器能过防盗链
+        const playReferer = trimData.referer || trimData.initiator || trimData.webUrl || "";
+        let playOrigin = trimData.origin;
+        if (!playOrigin && playReferer) {
+            try { playOrigin = new URL(playReferer).origin; } catch { playOrigin = ""; }
+        }
+        // 单独暴露 供显式拼参数用 例如 ${playReferer|to:urlEncode|exists:'%26referer%3D*'}
+        trimData.playReferer = playReferer;
+        trimData.playOrigin = playOrigin;
+        // playUrl 是上面两者的简写形式 等价于 url&referer=...&origin=...
+        trimData.playUrl = trimData.url
+            + (playReferer ? `&referer=${playReferer}` : "")
+            + (playOrigin ? `&origin=${playOrigin}` : "");
         const _data = { ...data, ...trimData };
 
         const ast = this._parse(text);

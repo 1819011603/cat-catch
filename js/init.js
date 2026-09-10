@@ -133,6 +133,12 @@ G.OptionLists = {
     invokeText: `m3u8dlre:"\${url}" --save-dir "%USERPROFILE%\\Downloads" --del-after-done --save-name "\${title}_\${now}" --auto-select \${referer|exists:'-H "Referer: *"'}`,
     invokeConfirm: false,
 
+    // 转发 把资源地址交给外部在线播放器/服务 在新标签打开
+    // 按钮默认显示 但模板默认为空 未配置时点击只提示 不会把地址发往任何第三方
+    forward: true,
+    forwardText: "",
+    forwardConfirm: false,
+
     // m3u8解析器默认参数
     M3u8Thread: 6,
     M3u8Mp4: false,

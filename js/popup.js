@@ -114,6 +114,7 @@ function AddMedia(data, currentTab = true) {
                 <img src="img/download.svg" class="icon download" id="download" title="${i18n.download}"/>
                 <img src="img/aria2.png" class="icon aria2 ${G.enableAria2Rpc ? "" : "hide"}"" id="aria2" title="Aria2"/>
                 <img src="img/invoke.svg" class="icon invoke ${G.invoke ? "" : "hide"}"" id="invoke" title="${i18n.invoke}"/>
+                <img src="img/invoke.svg" class="icon forward ${G.forward ? "" : "hide"}" id="forward" title="${i18n.forward}"/>
                 <img src="img/send.svg" class="icon send ${G.send2localManual || G.send2local ? "" : "hide"}"" id="send2local" title="${i18n.send2local}"/>
                 <img src="img/mqtt.svg" class="icon mqtt ${G.mqttEnable ? "" : "hide"}" id="mqtt" title="${i18n.send2MQTT}"/>
             </div>
@@ -359,6 +360,38 @@ function AddMedia(data, currentTab = true) {
     chrome.tabs.update({ url: url });
     return false;
   });
+  //转发 把资源地址交给外部在线播放器/服务 在新标签打开 不影响当前视频页
+  data.html.find('.forward').click(function (event) {
+    if (isEmpty(G.forwardText)) {
+      Tips(i18n.forwardNotSet, 4000);
+      return false;
+    }
+    const url = templates(G.forwardText, data);
+
+    // 转发前确认地址
+    if (G.forwardConfirm) {
+      data.html.find('.confirm').remove();
+      const confirm = $(`<div class="confirm">
+                        <textarea type="text" class="width100" rows="10">${url}</textarea>
+                        <button class="button2" id="confirm">${i18n.confirm}</button>
+                        <button class="button2" id="close">${i18n.close}</button>
+                    </div>`);
+      confirm.find("#confirm").click(function () {
+        const url = confirm.find("textarea").val();
+        confirm.remove();
+        chrome.tabs.create({ url: url });
+        return false;
+      });
+      confirm.find("#close").click(function () {
+        confirm.remove();
+      });
+      data.html.append(confirm);
+      return false;
+    }
+
+    chrome.tabs.create({ url: url });
+    return false;
+  });
   //播放
   data.html.find('#play').click(function () {
     if (isEmpty(G.Player)) { return true; }
@@ -583,6 +616,48 @@ $mergeDown.click(function () {
     return true;
   }
   catDownload(checkedData, { ffmpeg: "merge" })
+});
+// 一键下载 自动挑出本页主媒体 并选择合适的下载路径
+$('#oneClickDown').click(function () {
+  const { mode, picked, candidates, ambiguous, maybeNoAudio } = pickMainMedia([...getData().values()]);
+
+  if (mode == "none") {
+    Tips(i18n.noData, 2000);
+    return;
+  }
+
+  // 无法确定主次 勾选候选项 由用户点现有的下载/合并按钮确认
+  if (ambiguous) {
+    getData().forEach(function (data) {
+      data.checked = candidates.includes(data);
+    });
+    mergeDownButton();
+    Tips(i18n.oneClickAmbiguous, 4000);
+    return;
+  }
+
+  // m3u8 / mpd 交给解析页 解析页自带码率选择与音轨配对
+  if (mode == "parser") {
+    openParser(picked[0], { autoDown: true, autoClose: true });
+    Tips(i18n.oneClickSent, 2000);
+    return;
+  }
+
+  // 音视频分轨 送去合并
+  if (mode == "merge") {
+    catDownload(picked, { ffmpeg: "merge" });
+    Tips(i18n.oneClickSent, 2000);
+    return;
+  }
+
+  // 单文件 直接下载
+  // 以防止popup页面被关闭 丢失下载数据 临时修改为 后台下载
+  G.downActive = true;
+  chrome.downloads.download({
+    url: picked[0].url,
+    filename: picked[0].downFileName
+  }, function (id) { downData[id] = picked[0]; });
+  Tips(maybeNoAudio ? i18n.oneClickMaybeNoAudio : i18n.oneClickSent, maybeNoAudio ? 5000 : 2000);
 });
 // 复制选中文件
 $('#AllCopy').click(function () {

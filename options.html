@@ -28,6 +28,7 @@
       <li><a href="#anchorSend2local" data-i18n="send2local" title="send2local"></a></li>
       <li><a href="#anchorM3u8dl" data-i18n="sideurlprotocol" title="URL Protocol m3u8dl"></a></li>
       <li><a href="#anchorInvokeApp" data-i18n="invokeApp" title="invokeApp"></a></li>
+      <li><a href="#anchorForward" data-i18n="forward" title="forward"></a></li>
       <li><a href="#anchorReplaceTags" data-i18n="replaceTags" title="replaceTags"></a></li>
       <li><a href="#anchorDownloader" data-i18n="downloader" title="downloader"></a></li>
       <li><a href="#anchorM3u8Parser" data-i18n="m3u8Parser" title="m3u8Parser"></a></li>
@@ -442,6 +443,51 @@
               <a href="https://cat-catch.94cat.com/docs/tag" target="_blank" data-i18n="replaceKeywordList"></a>
             </div>
             <textarea id="invokeText" save="input" type="text" class="width100 break-all" rows="3"></textarea>
+          </div>
+          <div class="flex-end">
+            <button type="button" class="resetOption" data-i18n="resetSettings"></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 转发到在线播放器/服务 -->
+    <section id="anchorForward">
+      <h1 class="optionsTitle">
+        <img src="img/invoke.svg" style="width: 18px" class="forward" />
+        <p data-i18n-outer="forward"></p>
+      </h1>
+      <div class="optionBox" id="forwardOption">
+        <div class="list">
+          <div class="item">
+            <div data-i18n="enable"></div>
+            <div class="switch">
+              <label class="switchLabel switchRadius">
+                <input type="checkbox" id="forward" save="click" class="switchInput" />
+                <span class="switchRound switchRadius"><em class="switchRoundBtn switchRadius"></em></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="item">
+            <div data-i18n="confirmParameters"></div>
+            <br>
+            <div class="switch">
+              <label class="switchLabel switchRadius">
+                <input type="checkbox" id="forwardConfirm" save="click" class="switchInput" />
+                <span class="switchRound switchRadius"><em class="switchRoundBtn switchRadius"></em></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="item" style="margin-bottom: 5px;margin-top: 5px;">
+            <div>
+              <p data-i18n="forwardTips"></p>
+              <span data-i18n-outer="forwardPreset"></span> <select id="forwardTemplate" class="select"></select>
+              <a href="https://cat-catch.94cat.com/docs/tag" target="_blank" data-i18n="replaceKeywordList"></a>
+            </div>
+            <textarea id="forwardText" save="input" type="text" class="width100 break-all" rows="3"
+              data-i18n-placeholder="forwardPlaceholder"></textarea>
           </div>
           <div class="flex-end">
             <button type="button" class="resetOption" data-i18n="resetSettings"></button>
