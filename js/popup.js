@@ -24,6 +24,13 @@ const allData = new Map([
   [true, new Map()],  // 当前页面
   [false, new Map()]  // 其他页面
 ]);
+// 分组 组号计数器与各列表最后一条资源
+// 初始填充和边嗅探边到的资源共用同一个计数器 组号才不会重号
+const lastAdded = new Map([
+  [true, null],
+  [false, null]
+]);
+let group = 1;
 // 筛选
 const $filter_ext = $("#filter #ext");
 // 储存所有扩展名，保存是否筛选状态 来判断新加入的资源 立刻判断是否需要隐藏
@@ -472,6 +479,8 @@ function AddMedia(data, currentTab = true) {
 
   // 使用Map 储存数据
   allData.get(currentTab).set(data.requestId, data);
+  // 记住每个列表的最后一条 下一条到达时拿它比时间差分组
+  lastAdded.set(currentTab, data);
 
   // 筛选
   if (!filterExt.has(data.ext)) {
@@ -618,6 +627,26 @@ $mergeDown.click(function () {
   }
   catDownload(checkedData, { ffmpeg: "merge" })
 });
+/**
+ * 分组 给边嗅探边到的资源补组号
+ * 初始填充那段是拿到全量数据后两两配对 而 popupAddData 进来的资源没人管
+ * 结果就是开着 popup 嗅到的没有组号 关掉重开才有 分轨配对也就跟着失效
+ * @param {Object} data 新到的资源
+ * @param {Boolean} currentTab 是否当前页面的列表
+ */
+function setGroup(data, currentTab) {
+  const prev = lastAdded.get(currentTab);
+  // 上一条已经跟别人成组了 不再往下串成三条
+  if (!prev || prev.group || !prev.getTime || !data.getTime) { return; }
+  if (Math.abs(data.getTime - prev.getTime) > G.groupTime) { return; }
+
+  prev.group = group;
+  data.group = group;
+  group++;
+  // 上一条的 DOM 已经渲染完了 组号标签得补上
+  G.showGroup && prev.html && prev.html.find(".group").text(`[${prev.group}]`);
+}
+
 // 定位 只勾选当前页面正在播放的那一份媒体
 $('#locate').click(function () {
   chrome.tabs.sendMessage(G.tabId, { Message: "getPlayingMedia" }, { frameId: 0 }, function (response) {
@@ -673,8 +702,12 @@ const LOCATE_PROBE_TIMEOUT = 4000;
 function probeDuration(data) {
   return new Promise(function (resolve) {
     if (data.duration) { resolve(data); return; }
+    // 探过但没探出时长的 别再点第二次
+    // 面板内部只挡重复请求 挡不住重复展开 再点也只是白等一轮超时
+    if (data.durationProbed) { resolve(null); return; }
     // 浏览器不认 mpd popup 里也没有 dash 解析器 探不了
     if (isMPD(data)) { resolve(null); return; }
+    data.durationProbed = true;
 
     const wasOpen = data.urlPanelShow;
     // 展开面板 触发现成的预览加载 元数据回来后 data.duration 就有了
@@ -712,17 +745,27 @@ async function locateByDuration(media) {
 
   Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_TIMEOUT * pool.length);
   const probed = [];
-  for (const data of pool) {
-    const result = await probeDuration(data);
-    result && probed.push(result);
+  let matched = { picked: [], diff: 0 };
+  for (let index = 0; index < pool.length; index++) {
+    const result = await probeDuration(pool[index]);
+    if (!result) { continue; }
+    probed.push(result);
+    matched = pickByDuration(probed, media.duration, media.videoHeight);
+
+    // 凑齐同组的视频轨加音频轨 就是一份媒体的全部 不用再探
+    if (matched.picked.length >= 2) { break; }
+    if (!matched.picked.length) { continue; }
+
+    // 只中了一条 剩下的候选里还有同组的才值得继续探 否则它就是单文件 立刻停
+    const group = matched.picked[0].group;
+    if (!group || !pool.slice(index + 1).some(item => item.group === group)) { break; }
   }
 
-  const { picked, diff } = pickByDuration(probed, media.duration, media.videoHeight);
-  if (!picked.length) {
+  if (!matched.picked.length) {
     Tips(i18n.locateNotFound, 5000);
     return;
   }
-  locateSelect(picked, 4, diff);
+  locateSelect(matched.picked, 4, matched.diff);
 }
 
 /**
@@ -1083,8 +1126,8 @@ const interval = setInterval(async function () {
     /**
      * 通过计算时间差来判断是否为同一组资源。
      * 如果时间差小于等于G.groupTime，则认为是同一组资源，并为它们分配相同的组号。
+     * 组号计数器是模块级的 后续 popupAddData 进来的资源接着往下编 不会重号
      */
-    let group = 1;
     for (let key = 0; key < currentCount; key += 2) {
       const current = data[key];
       const next = data[key + 1];
@@ -1107,7 +1150,10 @@ const interval = setInterval(async function () {
     if (!Message.Message || !Message.data) { return; }
     // 添加资源
     if (Message.Message == "popupAddData") {
-      const html = AddMedia(Message.data, Message.data.tabId == G.tabId);
+      const currentTab = Message.data.tabId == G.tabId;
+      // 先分组 再渲染 否则组号标签出不来
+      setGroup(Message.data, currentTab);
+      const html = AddMedia(Message.data, currentTab);
       if (Message.data.tabId == G.tabId) {
         !currentCount && $mediaList.append($current);
         currentCount++;

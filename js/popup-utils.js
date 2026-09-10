@@ -205,14 +205,29 @@ function pickPlayingMedia(list, srcList, mseUrls) {
 const PICK_DURATION_TOLERANCE = 1;
 
 /**
+ * 定位 判断探到元数据的资源是音轨还是视频轨
+ * 探过之后有更硬的依据 有画面高度就是视频 没有就是没有视频轨
+ * 比只看后缀准 音轨常被站点标成 .mp4
+ * @param {Object} data 已探到时长的资源对象
+ * @returns {String} "audio" | "video"
+ */
+function probedKind(data) {
+    if (data.videoHeight) { return "video"; }
+    // 清单没走解码这条路 高度不可靠 一律按视频算
+    if (isM3U8(data) || isMPD(data)) { return "video"; }
+    return "audio";
+}
+
+/**
  * 定位 第三级 从已探到时长的候选里挑出与页面播放时长一致的
- * 分轨的音频时长与视频一致 会一起留下 正好是要的结果
- * 同时长的多码率变体用高度再收一次 纯音轨高度为 0 不参与收窄
+ * 结果最多两条 且只有同组时才给两条 —— 组号是按到达时间差配的
+ * 音视频分轨必然同时发起 落在同一组 组号不同的音轨跟这个视频没关系 不能凑一对
+ * 同一轨有多条命中时 依次比 高度是否对得上 → 时长差 → 体积
  * 纯函数 不修改传入的资源对象
  * @param {Array} probed 已探到时长的资源数组
  * @param {Number} target 页面媒体的时长 秒
  * @param {Number} targetHeight 页面媒体的高度 0 表示未知
- * @returns {Object} { picked, diff } diff 为最接近的那条差了多少秒
+ * @returns {Object} { picked, diff } diff 为命中项里最接近的那条差了多少秒
  */
 function pickByDuration(probed, target, targetHeight) {
     const result = { picked: [], diff: 0 };
@@ -220,21 +235,38 @@ function pickByDuration(probed, target, targetHeight) {
 
     // 硬上限 1 秒 时长必须基本相同才算同一份媒体
     // 留这 1 秒是因为清单总时长是分片累加 跟解码出来的时长常有零点几秒出入 不是给「相近」留余量
-    let hit = probed.filter(data =>
-        data.duration && isFinite(data.duration) && Math.abs(data.duration - target) <= PICK_DURATION_TOLERANCE);
+    const diffOf = data => Math.abs(data.duration - target);
+    const hit = probed.filter(data =>
+        data.duration && isFinite(data.duration) && diffOf(data) <= PICK_DURATION_TOLERANCE);
     if (!hit.length) { return result; }
 
-    // 1 秒窗口本身已经够紧 窗口内的都留下 不再按「谁更接近」二次筛
-    // 分轨的音视频时长常差零点几秒 二次筛会把音轨甩掉
-    const min = Math.min(...hit.map(data => Math.abs(data.duration - target)));
+    // 同一轨里挑最像的那条
+    const best = function (group) {
+        return group.slice().sort(function (a, b) {
+            if (targetHeight) {
+                const order = (a.videoHeight == targetHeight ? 0 : 1) - (b.videoHeight == targetHeight ? 0 : 1);
+                if (order) { return order; }
+            }
+            if (Math.abs(diffOf(a) - diffOf(b)) > 0.001) { return diffOf(a) - diffOf(b); }
+            return (b._size ?? 0) - (a._size ?? 0);
+        })[0];
+    };
 
-    if (targetHeight) {
-        const sameHeight = hit.filter(data => !data.videoHeight || data.videoHeight == targetHeight);
-        sameHeight.length && (hit = sameHeight);
+    const video = hit.filter(data => probedKind(data) == "video");
+    const audio = hit.filter(data => probedKind(data) == "audio");
+
+    if (!video.length) {
+        // 只有音轨 就它一条
+        result.picked.push(best(audio));
+    } else {
+        const main = best(video);
+        result.picked.push(main);
+        // 只认同组的音轨 没有组号说明没跟谁同时发起 那就是单文件 不配对
+        const mate = main.group ? best(audio.filter(data => data.group === main.group)) : undefined;
+        mate && result.picked.push(mate);
     }
 
-    result.picked = hit;
-    result.diff = min;
+    result.diff = Math.min(...result.picked.map(diffOf));
     return result;
 }
 
