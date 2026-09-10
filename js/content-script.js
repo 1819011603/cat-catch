@@ -67,7 +67,10 @@
             const list = [];
             const collect = function (root) {
                 root.querySelectorAll("video, audio").forEach(function (media) {
-                    if (!media.currentSrc) { return; }
+                    // 不能要求 currentSrc 非空
+                    // srcObject 挂 MediaSource 的播放器(抖音就是)按规范 currentSrc 就是空串
+                    // 以 readyState 判断这个元素里到底有没有媒体 空占位的 video 标签 readyState 为 0
+                    if (!media.currentSrc && !media.readyState) { return; }
                     list.push({
                         src: media.currentSrc,
                         playing: !media.paused,

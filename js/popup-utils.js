@@ -145,26 +145,18 @@ function urlBody(url) {
     return index == -1 ? url : url.slice(0, index);
 }
 
-/**
- * 定位 取 URL 的所在目录 用于「同目录即同一份流」的兜底判断
- * @param {String} url
- * @returns {String}
- */
-function urlDir(url) {
-    const body = urlBody(url);
-    const index = body.lastIndexOf("/");
-    return index == -1 ? body : body.slice(0, index + 1);
-}
 
 /**
  * 定位 从资源列表中挑出「正在播放的那一个」
- * 三级匹配 命中一级就不再往下走 避免越匹配越宽
+ * 只做精确匹配 命中一级就不再往下走
  *   1 完整 URL 相同        直链播放 精确
  *   2 去掉 query 后相同     同一资源换了签名参数
- *   3 与 MSE 分片同目录      HLS/DASH 分片本身没被捕获时 反推同目录的清单
+ * 原来还有一级「与 MSE 分片同目录」 已去掉 —— 大站 CDN 一个目录底下放着无数不相干的视频
+ * (抖音全站都在 /video/tos/cn/tos-cn-ve-15/ 下面) 同目录说明不了任何事 只会乱匹配
+ * 那一级本来是给「分片没被捕获 反推清单」用的 现在按时长匹配能更准地办同一件事
  * 纯函数 不修改传入的资源对象
  * @param {Array} list 当前标签的资源数组
- * @param {Array} srcList 页面媒体元素的 currentSrc 数组 blob: 的应剔除
+ * @param {Array} srcList 页面媒体元素的 currentSrc 数组 blob: 的会被剔除
  * @param {Array} mseUrls mse.js 反查到的真实地址数组
  * @returns {Object} { picked, tier } tier 为 0 表示没匹配上
  */
@@ -174,17 +166,10 @@ function pickPlayingMedia(list, srcList, mseUrls) {
 
     const exact = new Set();
     const body = new Set();
-    const dirs = new Set();
-    (srcList ?? []).forEach(function (url) {
+    [...(srcList ?? []), ...(mseUrls ?? [])].forEach(function (url) {
         if (!url || url.startsWith("blob:")) { return; }
         exact.add(url);
         body.add(urlBody(url));
-    });
-    (mseUrls ?? []).forEach(function (url) {
-        if (!url) { return; }
-        exact.add(url);
-        body.add(urlBody(url));
-        dirs.add(urlDir(url));
     });
     if (!exact.size) { return result; }
 
@@ -192,12 +177,7 @@ function pickPlayingMedia(list, srcList, mseUrls) {
     if (result.picked.length) { result.tier = 1; return result; }
 
     result.picked = list.filter(data => body.has(urlBody(data.url)));
-    if (result.picked.length) { result.tier = 2; return result; }
-
-    // 同目录这级放得比较宽 只认媒体和清单 免得把 key/json 也带上
-    result.picked = list.filter(data =>
-        dirs.has(urlDir(data.url)) && (isMedia(data) || isM3U8(data) || isMPD(data)));
-    result.tier = result.picked.length ? 3 : 0;
+    result.tier = result.picked.length ? 2 : 0;
     return result;
 }
 

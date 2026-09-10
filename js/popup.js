@@ -676,10 +676,10 @@ $('#locate').click(function () {
       return;
     }
 
-    // 前两级都没命中 退到按时长匹配
+    // URL 对不上 走按时长匹配 —— MSE 播放的站点基本都落到这条路上
     const media = targets.find(item => item.duration && isFinite(item.duration)) ?? targets[0];
     if (!media.duration || !isFinite(media.duration)) {
-      // 直播没有总时长 这条路走不通 只能提示前两级的失败原因
+      // 直播没有总时长 按时长这条路走不通
       const blobOnly = srcList.every(src => !src || src.startsWith("blob:"));
       Tips(blobOnly && !mseUrls.length ? i18n.locateNeedMse : i18n.locateNotFound, 5000);
       return;
@@ -688,7 +688,7 @@ $('#locate').click(function () {
   });
 });
 
-// 定位 第三级 按时长匹配
+// 定位 按时长匹配
 // 时长不在响应头里 只能让资源自己报 复用资源面板的预览逻辑 模拟点击展开就会加载元数据
 // 面板内部有 mediaInfo state 去重 data.duration 也留在对象上 同一条资源只探一次 再点定位直接用缓存
 const LOCATE_PROBE_MAX = 8;
@@ -944,6 +944,8 @@ $('#Clear').click(function () {
     $all.empty();
   }
   allData.get(activeTab).clear();
+  // 列表清空了 最后一条也得跟着清 否则下一条资源会去跟一个已经被删掉的资源分组
+  lastAdded.set(activeTab, null);
   UItoggle();
 });
 // 模拟手机端
@@ -1126,20 +1128,13 @@ const interval = setInterval(async function () {
     /**
      * 通过计算时间差来判断是否为同一组资源。
      * 如果时间差小于等于G.groupTime，则认为是同一组资源，并为它们分配相同的组号。
-     * 组号计数器是模块级的 后续 popupAddData 进来的资源接着往下编 不会重号
+     * 逐条跟上一条比 而不是按下标奇偶两两比 —— 后者只比较 (0,1) (2,3) (4,5)
+     * 一对音视频正好落在 (1,2) 这种跨边界的位置就永远配不上组
+     * 跟 popupAddData 那条路径共用 setGroup 组号计数器也是同一个 不会重号
      */
-    for (let key = 0; key < currentCount; key += 2) {
-      const current = data[key];
-      const next = data[key + 1];
-      if (next && Math.abs(current.getTime - next.getTime) <= G.groupTime) {
-        current.group = group;
-        next.group = group;
-        group++;
-      }
-      $current[G.reverse ? "prepend" : "append"](AddMedia(current));
-      if (next) {
-        $current[G.reverse ? "prepend" : "append"](AddMedia(next));
-      }
+    for (const item of data) {
+      setGroup(item, true);
+      $current[G.reverse ? "prepend" : "append"](AddMedia(item));
     }
 
     $mediaList.append($current);
