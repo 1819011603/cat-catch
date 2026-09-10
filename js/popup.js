@@ -756,15 +756,16 @@ function pickTarget(targets) {
 }
 
 /**
- * 定位 候选池 按到达时间倒序
+ * 定位 候选池 按到达时间正序 从列表第一条往后筛
+ * 倒序是错的 —— 抖音先请求你正在看的这条 再预加载后面几条
+ * 所以最新到达的是「将要播的」 最早到达的才是「在播的」 倒序必然选到预加载的那几条
  * @returns {Array}
  */
 function locatePool() {
   return [...getData().values()]
     // 被筛选隐藏的不动 用户既然筛掉了就不该去碰它
     .filter(data => (isMedia(data) || isM3U8(data)) && !data.html.is(":hidden"))
-    // 正在播的必然是最近抓到的 但这只是排序 不是判据
-    .sort((a, b) => (b.getTime ?? 0) - (a.getTime ?? 0))
+    .sort((a, b) => (a.getTime ?? 0) - (b.getTime ?? 0))
     .slice(0, LOCATE_PROBE_MAX);
 }
 
@@ -773,10 +774,14 @@ function locatePool() {
 // 不吃任何缓存 每次定位都重新读 —— 探测失败常常是临时的
 // (referer 的 DNR 规则全局只有一条 串行探测时会被下一条资源顶掉 撞上时序就失败)
 // 缓存失败结果等于把临时故障变成永久故障 那条资源就再也定位不到了
-// 探测上限 信息流刷久了资源能堆到十几条 卡太小会把在播的那条挤出去
-// 命中就提前收工 所以正常情况下探不到上限
-const LOCATE_PROBE_MAX = 12;
+// 探测上限 从列表第一条往后数 命中就提前收工 所以正常情况下探不到上限
+// 放到 50 是为了别把在播的那条挤出去 —— 信息流刷久了列表能堆到几十条
+// 真探满 50 条会发 50 次元数据请求 但那只发生在一条都匹配不上的时候
+const LOCATE_PROBE_MAX = 50;
 const LOCATE_PROBE_TIMEOUT = 4000;
+// 总时限 单条超时 4 秒 串行探 50 条最坏要 200 秒 那种卡死没人受得了
+// 一条都匹配不上时才会真跑到这个上限 到点就收 报已探到的结果
+const LOCATE_PROBE_DEADLINE = 30000;
 
 /**
  * 探一条资源的时长 用游离的 video 元素 不碰资源面板
@@ -849,10 +854,15 @@ async function locateByDuration(media, duration) {
   locateLog(`按时长匹配 目标 ${duration.toFixed(2)}s 容差 ${PICK_DURATION_TOLERANCE}s 候选 ${pool.length} 条`,
     pool.map(data => data.name + " 组" + (data.group ?? "无") + " " + data.size));
 
-  Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_TIMEOUT * pool.length);
+  Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_DEADLINE);
+  const deadline = Date.now() + LOCATE_PROBE_DEADLINE;
   const probed = [];
   let matched = { picked: [], diff: 0 };
   for (let index = 0; index < pool.length; index++) {
+    if (Date.now() > deadline) {
+      locateLog(`探到第 ${index} 条超出总时限 ${LOCATE_PROBE_DEADLINE / 1000} 秒 收工`, "");
+      break;
+    }
     const result = await probeDuration(pool[index]);
     locateLog(`探测 ${pool[index].name} 组${pool[index].group ?? "无"}`, result
       ? `时长 ${result.duration.toFixed(2)}s 画面高 ${result.videoHeight ?? 0} 判为${probedKind(result) == "video" ? "视频轨" : "音频轨"} 与目标差 ${Math.abs(result.duration - duration).toFixed(2)}s`
@@ -903,13 +913,18 @@ async function locateByRecent(media) {
 
   // 留 1 秒余量 免得刚好卡在边界上
   const floor = Math.max(0, (media.currentTime ?? 0) - PICK_DURATION_TOLERANCE);
-  Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_TIMEOUT * pool.length);
+  Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_DEADLINE);
 
   locateLog(`约束筛选 长度不短于 ${floor.toFixed(2)}s 画面高必须等于 ${media.videoHeight} 候选 ${pool.length} 条`,
     pool.map(data => data.name + " 组" + (data.group ?? "无") + " " + data.size));
 
+  const deadline = Date.now() + LOCATE_PROBE_DEADLINE;
   let hit = undefined;
   for (const data of pool) {
+    if (Date.now() > deadline) {
+      locateLog(`超出总时限 ${LOCATE_PROBE_DEADLINE / 1000} 秒 收工`, "");
+      break;
+    }
     const result = await probeDuration(data);
     if (!result) { locateLog(`探测 ${data.name}`, "探不到时长"); continue; }
     const kind = probedKind(result);
