@@ -127,6 +127,25 @@
       }
     }
   },
+  "locateDoneDuration": {
+    "message": "按时长匹配到 $num$ 条资源（相差 $diff$ 秒）",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      },
+      "diff": {
+        "content": "$2"
+      }
+    }
+  },
+  "locateProbing": {
+    "message": "地址对不上，正在逐条读取时长（$num$ 条）...",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      }
+    }
+  },
   "locateNoMedia": {
     "message": "页面上没有正在播放的媒体，或页面还没加载完"
   },

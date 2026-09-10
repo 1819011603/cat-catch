@@ -127,6 +127,25 @@
       }
     }
   },
+  "locateDoneDuration": {
+    "message": "Matched $num$ resource(s) by duration ($diff$s apart)",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      },
+      "diff": {
+        "content": "$2"
+      }
+    }
+  },
+  "locateProbing": {
+    "message": "No URL match, reading durations one by one ($num$ items)...",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      }
+    }
+  },
   "locateNoMedia": {
     "message": "No media playing on this page, or the page has not finished loading"
   },

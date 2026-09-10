@@ -201,6 +201,43 @@ function pickPlayingMedia(list, srcList, mseUrls) {
     return result;
 }
 
+// 定位 按时长匹配的容差 单位秒 超过就不认
+const PICK_DURATION_TOLERANCE = 1;
+
+/**
+ * 定位 第三级 从已探到时长的候选里挑出与页面播放时长一致的
+ * 分轨的音频时长与视频一致 会一起留下 正好是要的结果
+ * 同时长的多码率变体用高度再收一次 纯音轨高度为 0 不参与收窄
+ * 纯函数 不修改传入的资源对象
+ * @param {Array} probed 已探到时长的资源数组
+ * @param {Number} target 页面媒体的时长 秒
+ * @param {Number} targetHeight 页面媒体的高度 0 表示未知
+ * @returns {Object} { picked, diff } diff 为最接近的那条差了多少秒
+ */
+function pickByDuration(probed, target, targetHeight) {
+    const result = { picked: [], diff: 0 };
+    if (!probed || !probed.length || !target || !isFinite(target)) { return result; }
+
+    // 硬上限 1 秒 时长必须基本相同才算同一份媒体
+    // 留这 1 秒是因为清单总时长是分片累加 跟解码出来的时长常有零点几秒出入 不是给「相近」留余量
+    let hit = probed.filter(data =>
+        data.duration && isFinite(data.duration) && Math.abs(data.duration - target) <= PICK_DURATION_TOLERANCE);
+    if (!hit.length) { return result; }
+
+    // 1 秒窗口本身已经够紧 窗口内的都留下 不再按「谁更接近」二次筛
+    // 分轨的音视频时长常差零点几秒 二次筛会把音轨甩掉
+    const min = Math.min(...hit.map(data => Math.abs(data.duration - target)));
+
+    if (targetHeight) {
+        const sameHeight = hit.filter(data => !data.videoHeight || data.videoHeight == targetHeight);
+        sameHeight.length && (hit = sameHeight);
+    }
+
+    result.picked = hit;
+    result.diff = min;
+    return result;
+}
+
 /**
  * ari2a RPC发送一套资源
  * @param {object} data 资源对象

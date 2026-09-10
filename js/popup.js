@@ -642,20 +642,104 @@ $('#locate').click(function () {
 
     const { picked, tier } = pickPlayingMedia([...getData().values()], srcList, mseUrls);
 
-    if (!picked.length) {
-      // 全是 blob 且没有 MSE 映射 说明钩子没挂上 提示开启并刷新
+    if (picked.length) {
+      locateSelect(picked, tier);
+      return;
+    }
+
+    // 前两级都没命中 退到按时长匹配
+    const media = targets.find(item => item.duration && isFinite(item.duration)) ?? targets[0];
+    if (!media.duration || !isFinite(media.duration)) {
+      // 直播没有总时长 这条路走不通 只能提示前两级的失败原因
       const blobOnly = srcList.every(src => !src || src.startsWith("blob:"));
       Tips(blobOnly && !mseUrls.length ? i18n.locateNeedMse : i18n.locateNotFound, 5000);
       return;
     }
-
-    getData().forEach(function (data) {
-      data.checked = picked.includes(data);
-    });
-    mergeDownButton();
-    Tips(i18n("locateDone", [picked.length, tier]), 3000);
+    locateByDuration(media);
   });
 });
+
+// 定位 第三级 按时长匹配
+// 时长不在响应头里 只能让资源自己报 复用资源面板的预览逻辑 模拟点击展开就会加载元数据
+// 面板内部有 mediaInfo state 去重 data.duration 也留在对象上 同一条资源只探一次 再点定位直接用缓存
+const LOCATE_PROBE_MAX = 8;
+const LOCATE_PROBE_TIMEOUT = 4000;
+
+/**
+ * 探一条资源的时长 已探过的直接返回
+ * @param {Object} data 资源对象
+ * @returns {Promise<Object|null>}
+ */
+function probeDuration(data) {
+  return new Promise(function (resolve) {
+    if (data.duration) { resolve(data); return; }
+    // 浏览器不认 mpd popup 里也没有 dash 解析器 探不了
+    if (isMPD(data)) { resolve(null); return; }
+
+    const wasOpen = data.urlPanelShow;
+    // 展开面板 触发现成的预览加载 元数据回来后 data.duration 就有了
+    !wasOpen && data.panelHeading.click();
+
+    const start = Date.now();
+    const timer = setInterval(function () {
+      const timeout = Date.now() - start > LOCATE_PROBE_TIMEOUT;
+      if (!data.duration && !timeout) { return; }
+      clearInterval(timer);
+      // 本来是收着的 就还原回去 不留一堆展开的面板
+      !wasOpen && data.urlPanelShow && data.panelHeading.click();
+      resolve(data.duration ? data : null);
+    }, 200);
+  });
+}
+
+/**
+ * 按时长定位 串行探测
+ * setRequestHeaders 用的是同一条 DNR 规则 并发探会互相顶掉 referer 只能一条一条来
+ * @param {Object} media 页面正在播放的媒体状态
+ */
+async function locateByDuration(media) {
+  const pool = [...getData().values()]
+    // 被筛选隐藏的不探 用户既然筛掉了就不该再去点开它
+    .filter(data => (isMedia(data) || isM3U8(data)) && !data.html.is(":hidden"))
+    // 清单优先 剩下的按体积从大到小 分片体积小 自然排到后面探不到
+    .sort((a, b) => (isM3U8(b) ? 1 : 0) - (isM3U8(a) ? 1 : 0) || (b._size ?? 0) - (a._size ?? 0))
+    .slice(0, LOCATE_PROBE_MAX);
+
+  if (!pool.length) {
+    Tips(i18n.locateNotFound, 5000);
+    return;
+  }
+
+  Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_TIMEOUT * pool.length);
+  const probed = [];
+  for (const data of pool) {
+    const result = await probeDuration(data);
+    result && probed.push(result);
+  }
+
+  const { picked, diff } = pickByDuration(probed, media.duration, media.videoHeight);
+  if (!picked.length) {
+    Tips(i18n.locateNotFound, 5000);
+    return;
+  }
+  locateSelect(picked, 4, diff);
+}
+
+/**
+ * 定位 勾选结果并提示
+ * @param {Array} picked 命中的资源
+ * @param {Number} tier 匹配级别
+ * @param {Number} diff 按时长匹配时的秒差
+ */
+function locateSelect(picked, tier, diff = 0) {
+  getData().forEach(function (data) {
+    data.checked = picked.includes(data);
+  });
+  mergeDownButton();
+  Tips(tier == 4
+    ? i18n("locateDoneDuration", [picked.length, diff.toFixed(1)])
+    : i18n("locateDone", [picked.length, tier]), 3000);
+}
 // 一键下载 自动挑出本页主媒体 并选择合适的下载路径
 $('#oneClickDown').click(function () {
   const { mode, picked, candidates, ambiguous, maybeNoAudio } = pickMainMedia([...getData().values()]);
