@@ -660,6 +660,18 @@ $('#locate').click(function () {
       Tips(i18n.locateNoMedia, 3000);
       return;
     }
+    locateLog("页面媒体元素", response.list.map(item => ({
+      src: (item.src || "(空 srcObject)").slice(0, 50),
+      在播: item.playing,
+      duration: item.durationText,
+      界面时长: item.uiDuration,
+      seekable: item.seekableEnd,
+      buffered: item.bufferedEnd,
+      当前进度: item.currentTime,
+      画面: item.videoWidth + "x" + item.videoHeight,
+      MSE地址数: (item.mseUrls ?? []).length
+    })));
+
     const playing = response.list.filter(media => media.playing);
     const targets = playing.length ? playing : response.list;
 
@@ -671,13 +683,24 @@ $('#locate').click(function () {
     const { picked, tier } = pickPlayingMedia([...getData().values()], srcList, mseUrls);
 
     if (picked.length) {
+      locateLog(`URL 匹配命中 第 ${tier} 级`, picked.map(data => data.name));
       locateSelect(picked, tier);
       return;
     }
 
     // URL 对不上 走时长这条路 —— MSE 播放的站点基本都落到这里
-    const media = pickTarget(targets);
+    // 这里给 pickTarget 的是全部元素而不是 targets
+    // 视频暂停时 playing 过滤为空 targets 会退化成全部 交给 pickTarget 统一按判据排更可靠
+    const media = pickTarget(response.list);
     const duration = pageDuration(media);
+    locateLog("目标元素", {
+      画面: media.videoWidth + "x" + media.videoHeight,
+      当前进度: media.currentTime,
+      在播: media.playing,
+      duration: media.durationText,
+      界面时长: media.uiDuration,
+      最终采用的总时长: duration || "拿不到 转约束筛选"
+    });
     // 页面报得出总时长就按秒精确匹配 报不出(抖音这类把 duration 设成 Infinity)走约束筛选
     duration ? locateByDuration(media, duration) : locateByRecent(media);
   });
@@ -704,17 +727,30 @@ function pageDuration(media) {
   return end && isFinite(end) && end > 1 ? end : 0;
 }
 
+// 定位 排查日志 popup 的控制台在「右键 popup → 检查」里 用「弹出」开成标签页更好看
+function locateLog(label, detail) {
+  console.log("%c[猫抓定位] " + label, "color:#1a73e8;font-weight:bold", detail);
+}
+
 /**
  * 定位 挑出页面上「你正在看的那个」媒体元素
- * 不能挑「谁报得出时长」—— 抖音页面上同时有好几个 video(信息流上下邻居 侧边直播 广告)
- * 你在看的那个报 Infinity 会被跳过 于是锁到某个恰好报得出时长的小窗上 定位到不相干的资源
- * 按画面面积挑主播放器 面积相同再比播放进度
+ * 抖音页面上同时有好几个 video 元素 信息流上下邻居 预加载的下几条 侧边直播 广告
+ * 判据的优先级 踩过的坑都在这里
+ *   一 播放进度大于 1 秒 —— 这才是「你在看哪个」的信号 预加载的元素进度恒为 0
+ *      按画面面积挑是错的 预加载的元素也有尺寸 比在播的大就会被选中
+ *      那种元素 currentTime 为 0 界面时长自检过不去 于是掉进兜底 再拿它的画面高去筛 必然选错
+ *   二 画面面积 —— 同样在播时取主播放器 排掉角落里的小窗和广告
+ *   三 进度更靠后的 —— 面积也一样时 看得更久的那个更像主目标
+ * 不能挑「谁报得出时长」—— 在播的那个报 Infinity 会被跳过 锁到不相干的小窗上
  * @param {Array} targets 页面媒体状态数组
  * @returns {Object}
  */
 function pickTarget(targets) {
+  const watched = item => ((item.currentTime ?? 0) > 1 ? 0 : 1);
   return targets.slice().sort(function (a, b) {
-    return (b.videoWidth * b.videoHeight) - (a.videoWidth * a.videoHeight)
+    return watched(a) - watched(b)
+      || (b.playing ? 1 : 0) - (a.playing ? 1 : 0)
+      || (b.videoWidth * b.videoHeight) - (a.videoWidth * a.videoHeight)
       || (b.currentTime ?? 0) - (a.currentTime ?? 0);
   })[0];
 }
@@ -737,7 +773,9 @@ function locatePool() {
 // 不吃任何缓存 每次定位都重新读 —— 探测失败常常是临时的
 // (referer 的 DNR 规则全局只有一条 串行探测时会被下一条资源顶掉 撞上时序就失败)
 // 缓存失败结果等于把临时故障变成永久故障 那条资源就再也定位不到了
-const LOCATE_PROBE_MAX = 8;
+// 探测上限 信息流刷久了资源能堆到十几条 卡太小会把在播的那条挤出去
+// 命中就提前收工 所以正常情况下探不到上限
+const LOCATE_PROBE_MAX = 12;
 const LOCATE_PROBE_TIMEOUT = 4000;
 
 /**
@@ -808,11 +846,17 @@ async function locateByDuration(media, duration) {
     return;
   }
 
+  locateLog(`按时长匹配 目标 ${duration.toFixed(2)}s 容差 ${PICK_DURATION_TOLERANCE}s 候选 ${pool.length} 条`,
+    pool.map(data => data.name + " 组" + (data.group ?? "无") + " " + data.size));
+
   Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_TIMEOUT * pool.length);
   const probed = [];
   let matched = { picked: [], diff: 0 };
   for (let index = 0; index < pool.length; index++) {
     const result = await probeDuration(pool[index]);
+    locateLog(`探测 ${pool[index].name} 组${pool[index].group ?? "无"}`, result
+      ? `时长 ${result.duration.toFixed(2)}s 画面高 ${result.videoHeight ?? 0} 判为${probedKind(result) == "video" ? "视频轨" : "音频轨"} 与目标差 ${Math.abs(result.duration - duration).toFixed(2)}s`
+      : "探不到时长");
     if (!result) { continue; }
     probed.push(result);
     matched = pickByDuration(probed, duration, media.videoHeight);
@@ -830,16 +874,19 @@ async function locateByDuration(media, duration) {
     Tips(i18n.locateNotFound, 5000);
     return;
   }
+  locateLog("按时长命中", matched.picked.map(data => data.name + " 组" + (data.group ?? "无") + " " + data.size));
   locateSelect(matched.picked, 4, matched.diff);
 }
 
 /**
- * 页面报不出总时长时的定位 靠约束筛 不是简单取最新
- * 抖音这类会预加载下一个视频 最近到达的往往是下一条 不是在播的那条
- * 两个硬约束 都不是猜
- *   一 播放进度就是时长下限 已经播到 22 秒的视频 长度不可能短于 22 秒
+ * 页面报不出总时长时的定位 只靠硬约束 约束不满足就不选 不猜
+ * 「取最近到达的」是错的 —— 抖音先请求在播的这条 再预加载后面几条
+ * 最新到达的是将要播的 不是在播的 按时间猜必然选错
+ * 剩下两个能站住脚的约束
+ *   一 主轨必须是视频轨 音轨体积小又排在后面 一猜就猜到它身上
  *   二 画面尺寸必须相同 MSE 下页面报的 videoWidth/Height 就是当前解码画面的尺寸
- * 到达时间只用来排序 决定先探谁 以及都满足约束时选谁
+ *   三 长度不能短于已播秒数 已经播到 22 秒的视频不可能只有 10 秒
+ * 页面连画面尺寸都报不出来时 宁可提示失败 也不给一个大概率错的结果
  * @param {Object} media 页面正在播放的媒体状态
  */
 async function locateByRecent(media) {
@@ -848,29 +895,37 @@ async function locateByRecent(media) {
     Tips(i18n.locateNotFound, 5000);
     return;
   }
-
-  // 留 1 秒余量 免得刚好卡在边界上
-  const floor = Math.max(0, (media.currentTime ?? 0) - PICK_DURATION_TOLERANCE);
-  const sameSize = data => media.videoHeight && data.videoHeight == media.videoHeight;
-
-  Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_TIMEOUT * pool.length);
-  const passed = [];
-  for (const data of pool) {
-    const result = await probeDuration(data);
-    // 比播放进度还短的 不可能是正在播的这条
-    if (!result || result.duration < floor) { continue; }
-    passed.push(result);
-    // 画面尺寸也对得上 就是它了 不用再往下探
-    if (sameSize(result)) { break; }
-  }
-
-  if (!passed.length) {
+  // 没有画面尺寸就没有任何硬约束可用 不如直说
+  if (!media.videoHeight) {
     Tips(i18n("locateNoDuration", [media.durationText ?? "?"]), 6000);
     return;
   }
 
-  // 优先画面尺寸对得上的 都对不上就取最近到达的(pool 已按时间倒序)
-  const hit = passed.find(sameSize) ?? passed[0];
+  // 留 1 秒余量 免得刚好卡在边界上
+  const floor = Math.max(0, (media.currentTime ?? 0) - PICK_DURATION_TOLERANCE);
+  Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_TIMEOUT * pool.length);
+
+  locateLog(`约束筛选 长度不短于 ${floor.toFixed(2)}s 画面高必须等于 ${media.videoHeight} 候选 ${pool.length} 条`,
+    pool.map(data => data.name + " 组" + (data.group ?? "无") + " " + data.size));
+
+  let hit = undefined;
+  for (const data of pool) {
+    const result = await probeDuration(data);
+    if (!result) { locateLog(`探测 ${data.name}`, "探不到时长"); continue; }
+    const kind = probedKind(result);
+    const pass = result.duration >= floor && kind == "video" && result.videoHeight == media.videoHeight;
+    locateLog(`探测 ${data.name} 组${data.group ?? "无"}`,
+      `时长 ${result.duration.toFixed(2)}s 画面高 ${result.videoHeight ?? 0} 判为${kind == "video" ? "视频轨" : "音频轨"} -> ${pass ? "通过" : "不通过"}`);
+    if (!pass) { continue; }
+    hit = result;
+    break;
+  }
+
+  if (!hit) {
+    Tips(i18n("locateNoDuration", [media.durationText ?? "?"]), 6000);
+    return;
+  }
+
   const picked = [hit];
   // 同组的音轨一起给
   const mate = hit.group && pool.find(item => item !== hit && item.group === hit.group);
@@ -880,6 +935,7 @@ async function locateByRecent(media) {
     data.checked = picked.includes(data);
   });
   mergeDownButton();
+  locateLog("约束筛选命中", picked.map(data => data.name + " 组" + (data.group ?? "无") + " " + data.size));
   Tips(i18n("locateDoneRecent", [picked.length, media.durationText ?? "?"]), 5000);
 }
 

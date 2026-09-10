@@ -78,6 +78,21 @@
                 const part = text.split(":").map(Number);
                 return part.length == 3 ? part[0] * 3600 + part[1] * 60 + part[2] : part[0] * 60 + part[1];
             };
+            /**
+             * 取子树里所有元素 顺带钻进 open shadow root
+             * 播放器控制条常常在 shadow DOM 里 普通 querySelectorAll 钻不进去 什么也找不到
+             * @param {Element|ShadowRoot} root
+             * @param {Array} out
+             * @returns {Array}
+             */
+            const deepAll = function (root, out) {
+                out = out ?? [];
+                root.querySelectorAll("*").forEach(function (element) {
+                    out.push(element);
+                    element.shadowRoot && deepAll(element.shadowRoot, out);
+                });
+                return out;
+            };
 
             /**
              * 从播放器界面上的时间文本反推总时长
@@ -94,36 +109,77 @@
              * @returns {Number} 拿不到返回 0
              */
             const uiDuration = function (media) {
+                const log = function (result, why) {
+                    console.log("%c[猫抓定位] 界面时长", "color:#1a73e8;font-weight:bold",
+                        `进度 ${media.currentTime} -> ${result || "拿不到"}`, why);
+                    return result;
+                };
                 const current = media.currentTime;
                 // 还没开始播 没有可对照的数 一律不采信
-                if (!(current > 1)) { return 0; }
+                if (!(current > 1)) { return log(0, "播放进度不足 1 秒 没有可自检的参照"); }
                 const near = value => Math.abs(value - current) <= 2;
 
+                // 第一遍 成对时间 A / B —— 抖音的控制栏是 <span>00</span>:<span>09</span> / <span>02</span>:<span>52</span>
+                // 单个叶子里没有冒号 匹配不到 但它们的父容器 textContent 拼出来就是 00:09/02:52
+                // 所以这里看的是小块容器的整段文本 而不是叶子
+                for (const element of deepAll(document.body)) {
+                    // 只看小块容器 时间显示最多也就几个 span 包在一起
+                    if (element.children.length > 6) { continue; }
+                    const text = element.textContent;
+                    if (!text || text.length > 40) { continue; }
+                    const pair = text.match(TIME_PAIR);
+                    if (!pair) { continue; }
+                    const total = toSeconds(pair[2]);
+                    if (near(toSeconds(pair[1])) && total > current) {
+                        return log(total, `成对时间 "${text.trim()}" 于 ${element.className || element.tagName}`);
+                    }
+                }
+
+                // 第二遍 只有单独的总时长没有成对显示时 从 video 往上逐层找
                 let node = media.parentElement;
                 for (let level = 0; level < 6 && node; level++, node = node.parentElement) {
                     const values = [];
-                    node.querySelectorAll("*").forEach(function (element) {
-                        // 只看叶子节点 否则父节点会把整片文本拼在一起 混进无关数字
+                    deepAll(node).forEach(function (element) {
+                        // 这遍看叶子 父节点会把整片文本拼在一起 混进无关数字
                         if (element.children.length) { return; }
                         const found = element.textContent.match(TIME_ALL);
                         found && found.forEach(text => values.push(toSeconds(text)));
                     });
                     if (!values.length || !values.some(near)) { continue; }
                     const max = Math.max(...values);
-                    if (max > current) { return max; }
+                    if (max > current) { return log(max, `第 ${level + 1} 层祖先 时间值 ${values.join()}`); }
                 }
-
-                for (const element of document.body.querySelectorAll("*")) {
-                    // 只看小块容器 时间显示要么是一个叶子 要么是两三个 span 包在一起
-                    if (element.children.length > 4) { continue; }
-                    const text = element.textContent;
-                    if (!text || text.length > 40) { continue; }
-                    const pair = text.match(TIME_PAIR);
-                    if (!pair) { continue; }
-                    const total = toSeconds(pair[2]);
-                    if (near(toSeconds(pair[1])) && total > current) { return total; }
+                return log(0, "全页成对时间和祖先层都没找到能通过自检的时间文本");
+            };
+            /**
+             * 从播放器附近抓作者和视频描述 给文件名用
+             * 抖音的信息区形如  @山河旧影客 · 8月29日  换行  详细解读《高山下的花环》第四集 备战!
+             * 同样不认 class / id 只认形状 —— 作者以 @ 开头 描述取同一块里最长的一段文字
+             * 找到作者就立刻返回 不再往上走 免得跑到信息流上下条的信息区去
+             * @param {HTMLMediaElement} media
+             * @returns {Object} { author, desc } 抓不到就是空串
+             */
+            const pageInfo = function (media) {
+                let node = media.parentElement;
+                for (let level = 0; level < 6 && node; level++, node = node.parentElement) {
+                    let author = "";
+                    let desc = "";
+                    node.querySelectorAll("*").forEach(function (element) {
+                        if (element.children.length) { return; }
+                        const text = element.textContent.trim();
+                        if (!text || text.length > 200) { return; }
+                        if (!author && text.startsWith("@")) {
+                            // @山河旧影客 · 8月29日 里只要名字 分隔符后面的日期不要
+                            author = text.slice(1).split(/[·•|\s]/)[0].trim();
+                            return;
+                        }
+                        // 话题标签和时间显示不是描述
+                        if (text.startsWith("#") || new RegExp("^" + TIME + "$").test(text)) { return; }
+                        if (text.length > desc.length) { desc = text; }
+                    });
+                    if (author) { return { author: author, desc: desc }; }
                 }
-                return 0;
+                return { author: "", desc: "" };
             };
             const collect = function (root) {
                 root.querySelectorAll("video, audio").forEach(function (media) {
