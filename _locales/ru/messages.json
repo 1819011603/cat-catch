@@ -113,6 +113,80 @@
   "autoDownload": {
     "message": "Автозагрузка"
   },
+  "locate": {
+    "message": "Locate"
+  },
+  "locateDone": {
+    "message": "Selected $num$ resource(s) currently playing (match tier $tier$)",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      },
+      "tier": {
+        "content": "$2"
+      }
+    }
+  },
+  "locateNoMedia": {
+    "message": "No media playing on this page, or the page has not finished loading"
+  },
+  "locateNotFound": {
+    "message": "No matching resource. It may have finished loading before you opened Cat Catch"
+  },
+  "locateNeedMse": {
+    "message": "This page plays via MSE, so the src is a fake blob URL. Enable \"MSE Track\" under More Features, reload the page, and try again"
+  },
+  "mseTrack": {
+    "message": "MSE Track"
+  },
+  "closeMseTrack": {
+    "message": "Close MSE Track"
+  },
+  "skipTs": {
+    "message": "Skip ts"
+  },
+  "catchTs": {
+    "message": "Catch ts"
+  },
+  "skipTsOn": {
+    "message": "ts segment sniffing off. m3u8 manifests are still captured"
+  },
+  "skipTsOff": {
+    "message": "ts segment sniffing on. The list may fill up with segments"
+  },
+  "skipTsTips": {
+    "message": "Do not sniff ts segments. A single segment is not playable on its own, and one video can flood the list with hundreds of them. m3u8/mpd manifests are still captured; the parser pulls the segments itself."
+  },
+  "forward": {
+    "message": "Forward"
+  },
+  "forwardTips": {
+    "message": "Build a URL from the template and open it in a new tab. The media address is sent to whatever third-party service you configure here, so make sure you trust it. Variables: $${playReferer} and $${playOrigin} are the source address with fallback (the page URL is used when the request headers were not captured); $${playUrl} is shorthand for media address + referer + origin."
+  },
+  "forwardShort": {
+    "message": "short"
+  },
+  "forwardPreset": {
+    "message": "Preset"
+  },
+  "forwardPlaceholder": {
+    "message": "e.g. https://example.com/player?url=$${playUrl|to:urlEncode}"
+  },
+  "forwardNotSet": {
+    "message": "No forward template configured yet. Set one in the options page"
+  },
+  "oneClickDown": {
+    "message": "One-click"
+  },
+  "oneClickSent": {
+    "message": "Download started"
+  },
+  "oneClickAmbiguous": {
+    "message": "Multiple candidates selected for you, confirm then hit Download or Merge"
+  },
+  "oneClickMaybeNoAudio": {
+    "message": "Video track only. If it has no sound, select the audio track and hit Merge"
+  },
   "onlineMerge": {
     "message": "Объединить"
   },
@@ -1048,5 +1122,11 @@
   },
   "hideDownloadedSegments": {
     "message": "Скрыть загруженные сегменты"
+  },
+  "showGroup": {
+    "message": "Show Group"
+  },
+  "groupTime": {
+    "message": "Group Time"
   }
 }
