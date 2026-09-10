@@ -138,6 +138,17 @@
       }
     }
   },
+  "locateDoneRecent": {
+    "message": "Selected $num$ resource(s) from the most recent batch (the page reports no duration, duration = $value$, so this is inferred from arrival time — please verify)",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      },
+      "value": {
+        "content": "$2"
+      }
+    }
+  },
   "locateProbing": {
     "message": "No URL match, reading durations one by one ($num$ items)...",
     "placeholders": {
@@ -149,14 +160,19 @@
   "locateNoMedia": {
     "message": "No media playing on this page, or the page has not finished loading"
   },
+  "locateNoDuration": {
+    "message": "Cannot read the page duration (video.duration = $value$), so duration matching is impossible. This happens when an MSE player never sets mediaSource.duration",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
   "locateNoContact": {
     "message": "Cannot reach the page. Reload the page and try again (reloading the extension orphans the script in already-open pages)"
   },
   "locateNotFound": {
     "message": "No matching resource. It may have finished loading before you opened Cat Catch"
-  },
-  "locateNeedMse": {
-    "message": "This page plays via MSE, so the src is a fake blob URL. Enable \"MSE Track\" under More Features, reload the page, and try again"
   },
   "mseTrack": {
     "message": "MSE Track"

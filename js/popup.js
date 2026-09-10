@@ -677,51 +677,122 @@ $('#locate').click(function () {
     }
 
     // URL 对不上 走按时长匹配 —— MSE 播放的站点基本都落到这条路上
-    const media = targets.find(item => item.duration && isFinite(item.duration)) ?? targets[0];
-    if (!media.duration || !isFinite(media.duration)) {
-      // 直播没有总时长 按时长这条路走不通
-      const blobOnly = srcList.every(src => !src || src.startsWith("blob:"));
-      Tips(blobOnly && !mseUrls.length ? i18n.locateNeedMse : i18n.locateNotFound, 5000);
+    const media = targets.find(item => pageDuration(item) > 1) ?? targets[0];
+    const duration = pageDuration(media);
+    if (!duration) {
+      // 页面报不出总时长(抖音这类播放器把 duration 设成 Infinity) 按秒无从下手
+      // 退到「最近抓到的一组」 并在提示里说清用的是哪种依据 让人知道可信度
+      const recent = pickRecent([...getData().values()]);
+      if (!recent.length) {
+        Tips(i18n("locateNoDuration", [media.durationText ?? "?"]), 6000);
+        return;
+      }
+      getData().forEach(function (data) {
+        data.checked = recent.includes(data);
+      });
+      mergeDownButton();
+      Tips(i18n("locateDoneRecent", [recent.length, media.durationText ?? "?"]), 5000);
       return;
     }
-    locateByDuration(media);
+    locateByDuration(media, duration);
   });
 });
 
+/**
+ * 定位 取页面媒体的总时长
+ * MSE 播放时 video.duration 是 mediaSource.duration 播放器不设它就是 NaN
+ * 且 NaN / Infinity 过不了 sendResponse 的 JSON 序列化 到这里已经变成 null
+ * 所以依次退到 seekable / buffered 的末端 —— MSE 下 seekable 就是 [0, duration]
+ * @param {Object} media getPlayingMedia 返回的媒体状态
+ * @returns {Number} 拿不到返回 0
+ */
+function pageDuration(media) {
+  if (!media) { return 0; }
+  if (media.duration && isFinite(media.duration) && media.duration > 1) { return media.duration; }
+  // duration 是 Infinity 时 按规范 seekable 和 buffered 是同一个东西 也就是「已缓冲到哪」
+  // 那不是总时长 拿它当目标值 只有在视频恰好缓冲完时才碰巧对得上 换个视频就崩
+  // 宁可认拿不到 交给到达时间兜底 也别用一个会骗人的数
+  if (media.durationText == "Infinity") { return 0; }
+  const end = media.seekableEnd ?? 0;
+  return end && isFinite(end) && end > 1 ? end : 0;
+}
+
+/**
+ * 定位 兜底 拿最近到达的那一组资源
+ * 页面报不出总时长时用这个 —— 正在播的必然是最近抓到的
+ * 同组说明是同时发起的音视频分轨 一起给 最多两条
+ * @param {Array} list 当前标签的资源数组
+ * @returns {Array}
+ */
+function pickRecent(list) {
+  const pool = list
+    .filter(data => (isMedia(data) || isM3U8(data)) && !data.html.is(":hidden"))
+    .sort((a, b) => (b.getTime ?? 0) - (a.getTime ?? 0));
+  if (!pool.length) { return []; }
+  const newest = pool[0];
+  if (!newest.group) { return [newest]; }
+  return pool.filter(data => data.group === newest.group).slice(0, 2);
+}
+
 // 定位 按时长匹配
-// 时长不在响应头里 只能让资源自己报 复用资源面板的预览逻辑 模拟点击展开就会加载元数据
-// 面板内部有 mediaInfo state 去重 data.duration 也留在对象上 同一条资源只探一次 再点定位直接用缓存
+// 时长不在响应头里 只能让资源自己报一次元数据
+// 不吃任何缓存 每次定位都重新读 —— 探测失败常常是临时的
+// (referer 的 DNR 规则全局只有一条 串行探测时会被下一条资源顶掉 撞上时序就失败)
+// 缓存失败结果等于把临时故障变成永久故障 那条资源就再也定位不到了
 const LOCATE_PROBE_MAX = 8;
 const LOCATE_PROBE_TIMEOUT = 4000;
 
 /**
- * 探一条资源的时长 已探过的直接返回
+ * 探一条资源的时长 用游离的 video 元素 不碰资源面板
+ * 走面板的话面板内部的 mediaInfo state 会挡住第二次加载 想重探得连它一起重置
+ * 那又会让面板把标题时长那几行追加两遍 干脆自己开一个不挂进 DOM 的 video
  * @param {Object} data 资源对象
- * @returns {Promise<Object|null>}
+ * @returns {Promise<Object|null>} 探到就把 duration/videoHeight 写回 data 并返回它
  */
 function probeDuration(data) {
   return new Promise(function (resolve) {
-    if (data.duration) { resolve(data); return; }
-    // 探过但没探出时长的 别再点第二次
-    // 面板内部只挡重复请求 挡不住重复展开 再点也只是白等一轮超时
-    if (data.durationProbed) { resolve(null); return; }
     // 浏览器不认 mpd popup 里也没有 dash 解析器 探不了
     if (isMPD(data)) { resolve(null); return; }
-    data.durationProbed = true;
 
-    const wasOpen = data.urlPanelShow;
-    // 展开面板 触发现成的预览加载 元数据回来后 data.duration 就有了
-    !wasOpen && data.panelHeading.click();
+    let done = false;
+    let cleanup = function () { };
+    const finish = function (duration, videoHeight) {
+      if (done) { return; }
+      done = true;
+      clearTimeout(timer);
+      cleanup();
+      if (!duration || !isFinite(duration)) { resolve(null); return; }
+      data.duration = duration;
+      videoHeight && (data.videoHeight = videoHeight);
+      resolve(data);
+    };
+    const timer = setTimeout(function () { finish(0); }, LOCATE_PROBE_TIMEOUT);
+    const video = document.createElement("video");
 
-    const start = Date.now();
-    const timer = setInterval(function () {
-      const timeout = Date.now() - start > LOCATE_PROBE_TIMEOUT;
-      if (!data.duration && !timeout) { return; }
-      clearInterval(timer);
-      // 本来是收着的 就还原回去 不留一堆展开的面板
-      !wasOpen && data.urlPanelShow && data.panelHeading.click();
-      resolve(data.duration ? data : null);
-    }, 200);
+    if (isM3U8(data)) {
+      const hls = new Hls({ enableWorker: false });
+      cleanup = function () { try { hls.destroy(); } catch (e) { } };
+      // 清单载入就能拿到总时长 拿到立刻销毁 不让它继续拉分片
+      hls.on(Hls.Events.LEVEL_LOADED, function (event, res) {
+        finish(res?.details?.totalduration, 0);
+      });
+      setRequestHeaders(data.requestHeaders, function () {
+        hls.loadSource(data.url);
+        hls.attachMedia(video);
+      });
+      return;
+    }
+
+    video.preload = "metadata";
+    video.muted = true;
+    cleanup = function () {
+      try { video.removeAttribute("src"); video.load(); } catch (e) { }
+    };
+    video.addEventListener("loadedmetadata", function () {
+      finish(video.duration, video.videoHeight);
+    });
+    video.addEventListener("error", function () { finish(0); });
+    setRequestHeaders(data.requestHeaders, function () { video.src = data.url; });
   });
 }
 
@@ -729,13 +800,16 @@ function probeDuration(data) {
  * 按时长定位 串行探测
  * setRequestHeaders 用的是同一条 DNR 规则 并发探会互相顶掉 referer 只能一条一条来
  * @param {Object} media 页面正在播放的媒体状态
+ * @param {Number} duration 页面媒体的总时长 由 pageDuration 取好
  */
-async function locateByDuration(media) {
+async function locateByDuration(media, duration) {
   const pool = [...getData().values()]
-    // 被筛选隐藏的不探 用户既然筛掉了就不该再去点开它
+    // 被筛选隐藏的不探 用户既然筛掉了就不该去动它
     .filter(data => (isMedia(data) || isM3U8(data)) && !data.html.is(":hidden"))
-    // 清单优先 剩下的按体积从大到小 分片体积小 自然排到后面探不到
-    .sort((a, b) => (isM3U8(b) ? 1 : 0) - (isM3U8(a) ? 1 : 0) || (b._size ?? 0) - (a._size ?? 0))
+    // 按到达时间倒序 —— 正在播的必然是最近抓到的
+    // 之前按体积排是错的 信息流刷久了 新视频的资源会被旧的大文件挤出探测上限
+    // 于是第一次定位能中 之后就再也中不了
+    .sort((a, b) => (b.getTime ?? 0) - (a.getTime ?? 0))
     .slice(0, LOCATE_PROBE_MAX);
 
   if (!pool.length) {
@@ -750,7 +824,7 @@ async function locateByDuration(media) {
     const result = await probeDuration(pool[index]);
     if (!result) { continue; }
     probed.push(result);
-    matched = pickByDuration(probed, media.duration, media.videoHeight);
+    matched = pickByDuration(probed, duration, media.videoHeight);
 
     // 凑齐同组的视频轨加音频轨 就是一份媒体的全部 不用再探
     if (matched.picked.length >= 2) { break; }

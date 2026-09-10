@@ -138,6 +138,17 @@
       }
     }
   },
+  "locateDoneRecent": {
+    "message": "按最近抓到的一组勾选了 $num$ 条（页面报不出总时长，duration = $value$，只能按到达时间推断，请自行确认）",
+    "placeholders": {
+      "num": {
+        "content": "$1"
+      },
+      "value": {
+        "content": "$2"
+      }
+    }
+  },
   "locateProbing": {
     "message": "地址对不上，正在逐条读取时长（$num$ 条）...",
     "placeholders": {
@@ -149,14 +160,19 @@
   "locateNoMedia": {
     "message": "页面上没有正在播放的媒体，或页面还没加载完"
   },
+  "locateNoDuration": {
+    "message": "页面读不到总时长（video.duration = $value$），没法按秒匹配。MSE 播放器不设 mediaSource.duration 时就是这样",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
+  },
   "locateNoContact": {
     "message": "联系不上页面，请刷新页面后重试（重载扩展后，已打开的页面里旧脚本会失效）"
   },
   "locateNotFound": {
     "message": "没找到对应的资源，可能它在你打开猫抓之前就已经播完了"
-  },
-  "locateNeedMse": {
-    "message": "该页面用 MSE 播放，地址是 blob 假地址。请在「更多功能」里开启「MSE 追踪」并刷新页面后重试"
   },
   "mseTrack": {
     "message": "MSE追踪"

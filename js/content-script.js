@@ -65,16 +65,26 @@
          */
         if (Message.Message == "getPlayingMedia") {
             const list = [];
+            // TimeRanges 取最后一段的结束位置 没有区间就是 0
+            const range = function (ranges) {
+                return ranges && ranges.length ? ranges.end(ranges.length - 1) : 0;
+            };
             const collect = function (root) {
                 root.querySelectorAll("video, audio").forEach(function (media) {
                     // 不能要求 currentSrc 非空
                     // srcObject 挂 MediaSource 的播放器(抖音就是)按规范 currentSrc 就是空串
                     // 以 readyState 判断这个元素里到底有没有媒体 空占位的 video 标签 readyState 为 0
                     if (!media.currentSrc && !media.readyState) { return; }
+                    // MSE 播放时 duration 取的是 mediaSource.duration 播放器不设它就是 NaN
+                    // 而 sendResponse 走 JSON NaN 和 Infinity 都会变成 null 到不了对面
+                    // 所以多带几个来源 并把原值转成字符串一起送过去 定位失败时才说得清是哪一步没拿到
                     list.push({
                         src: media.currentSrc,
                         playing: !media.paused,
                         duration: media.duration,
+                        durationText: String(media.duration),
+                        seekableEnd: range(media.seekable),
+                        bufferedEnd: range(media.buffered),
                         currentTime: media.currentTime,
                         videoWidth: media.videoWidth ?? 0,
                         videoHeight: media.videoHeight ?? 0,
