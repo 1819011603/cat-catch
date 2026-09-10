@@ -660,7 +660,6 @@ $('#locate').click(function () {
       Tips(i18n.locateNoMedia, 3000);
       return;
     }
-    // 优先正在播的 全都暂停时退回页面上所有媒体元素
     const playing = response.list.filter(media => media.playing);
     const targets = playing.length ? playing : response.list;
 
@@ -676,25 +675,11 @@ $('#locate').click(function () {
       return;
     }
 
-    // URL 对不上 走按时长匹配 —— MSE 播放的站点基本都落到这条路上
-    const media = targets.find(item => pageDuration(item) > 1) ?? targets[0];
+    // URL 对不上 走时长这条路 —— MSE 播放的站点基本都落到这里
+    const media = pickTarget(targets);
     const duration = pageDuration(media);
-    if (!duration) {
-      // 页面报不出总时长(抖音这类播放器把 duration 设成 Infinity) 按秒无从下手
-      // 退到「最近抓到的一组」 并在提示里说清用的是哪种依据 让人知道可信度
-      const recent = pickRecent([...getData().values()]);
-      if (!recent.length) {
-        Tips(i18n("locateNoDuration", [media.durationText ?? "?"]), 6000);
-        return;
-      }
-      getData().forEach(function (data) {
-        data.checked = recent.includes(data);
-      });
-      mergeDownButton();
-      Tips(i18n("locateDoneRecent", [recent.length, media.durationText ?? "?"]), 5000);
-      return;
-    }
-    locateByDuration(media, duration);
+    // 页面报得出总时长就按秒精确匹配 报不出(抖音这类把 duration 设成 Infinity)走约束筛选
+    duration ? locateByDuration(media, duration) : locateByRecent(media);
   });
 });
 
@@ -709,29 +694,42 @@ $('#locate').click(function () {
 function pageDuration(media) {
   if (!media) { return 0; }
   if (media.duration && isFinite(media.duration) && media.duration > 1) { return media.duration; }
+  // 元素报不出来 就用界面上的时间文本 —— 页面自己明明显示着 00:22 / 10:37
+  // 那个值经过「必须有个时间跟 currentTime 对得上」的自检 比下面的缓冲进度可靠得多
+  if (media.uiDuration > 1) { return media.uiDuration; }
   // duration 是 Infinity 时 按规范 seekable 和 buffered 是同一个东西 也就是「已缓冲到哪」
-  // 那不是总时长 拿它当目标值 只有在视频恰好缓冲完时才碰巧对得上 换个视频就崩
-  // 宁可认拿不到 交给到达时间兜底 也别用一个会骗人的数
+  // 那不是总时长 拿它当目标值 只有视频恰好缓冲完时才碰巧对得上 换个视频就崩 宁可认拿不到
   if (media.durationText == "Infinity") { return 0; }
   const end = media.seekableEnd ?? 0;
   return end && isFinite(end) && end > 1 ? end : 0;
 }
 
 /**
- * 定位 兜底 拿最近到达的那一组资源
- * 页面报不出总时长时用这个 —— 正在播的必然是最近抓到的
- * 同组说明是同时发起的音视频分轨 一起给 最多两条
- * @param {Array} list 当前标签的资源数组
+ * 定位 挑出页面上「你正在看的那个」媒体元素
+ * 不能挑「谁报得出时长」—— 抖音页面上同时有好几个 video(信息流上下邻居 侧边直播 广告)
+ * 你在看的那个报 Infinity 会被跳过 于是锁到某个恰好报得出时长的小窗上 定位到不相干的资源
+ * 按画面面积挑主播放器 面积相同再比播放进度
+ * @param {Array} targets 页面媒体状态数组
+ * @returns {Object}
+ */
+function pickTarget(targets) {
+  return targets.slice().sort(function (a, b) {
+    return (b.videoWidth * b.videoHeight) - (a.videoWidth * a.videoHeight)
+      || (b.currentTime ?? 0) - (a.currentTime ?? 0);
+  })[0];
+}
+
+/**
+ * 定位 候选池 按到达时间倒序
  * @returns {Array}
  */
-function pickRecent(list) {
-  const pool = list
+function locatePool() {
+  return [...getData().values()]
+    // 被筛选隐藏的不动 用户既然筛掉了就不该去碰它
     .filter(data => (isMedia(data) || isM3U8(data)) && !data.html.is(":hidden"))
-    .sort((a, b) => (b.getTime ?? 0) - (a.getTime ?? 0));
-  if (!pool.length) { return []; }
-  const newest = pool[0];
-  if (!newest.group) { return [newest]; }
-  return pool.filter(data => data.group === newest.group).slice(0, 2);
+    // 正在播的必然是最近抓到的 但这只是排序 不是判据
+    .sort((a, b) => (b.getTime ?? 0) - (a.getTime ?? 0))
+    .slice(0, LOCATE_PROBE_MAX);
 }
 
 // 定位 按时长匹配
@@ -803,14 +801,7 @@ function probeDuration(data) {
  * @param {Number} duration 页面媒体的总时长 由 pageDuration 取好
  */
 async function locateByDuration(media, duration) {
-  const pool = [...getData().values()]
-    // 被筛选隐藏的不探 用户既然筛掉了就不该去动它
-    .filter(data => (isMedia(data) || isM3U8(data)) && !data.html.is(":hidden"))
-    // 按到达时间倒序 —— 正在播的必然是最近抓到的
-    // 之前按体积排是错的 信息流刷久了 新视频的资源会被旧的大文件挤出探测上限
-    // 于是第一次定位能中 之后就再也中不了
-    .sort((a, b) => (b.getTime ?? 0) - (a.getTime ?? 0))
-    .slice(0, LOCATE_PROBE_MAX);
+  const pool = locatePool();
 
   if (!pool.length) {
     Tips(i18n.locateNotFound, 5000);
@@ -840,6 +831,56 @@ async function locateByDuration(media, duration) {
     return;
   }
   locateSelect(matched.picked, 4, matched.diff);
+}
+
+/**
+ * 页面报不出总时长时的定位 靠约束筛 不是简单取最新
+ * 抖音这类会预加载下一个视频 最近到达的往往是下一条 不是在播的那条
+ * 两个硬约束 都不是猜
+ *   一 播放进度就是时长下限 已经播到 22 秒的视频 长度不可能短于 22 秒
+ *   二 画面尺寸必须相同 MSE 下页面报的 videoWidth/Height 就是当前解码画面的尺寸
+ * 到达时间只用来排序 决定先探谁 以及都满足约束时选谁
+ * @param {Object} media 页面正在播放的媒体状态
+ */
+async function locateByRecent(media) {
+  const pool = locatePool();
+  if (!pool.length) {
+    Tips(i18n.locateNotFound, 5000);
+    return;
+  }
+
+  // 留 1 秒余量 免得刚好卡在边界上
+  const floor = Math.max(0, (media.currentTime ?? 0) - PICK_DURATION_TOLERANCE);
+  const sameSize = data => media.videoHeight && data.videoHeight == media.videoHeight;
+
+  Tips(i18n("locateProbing", [pool.length]), LOCATE_PROBE_TIMEOUT * pool.length);
+  const passed = [];
+  for (const data of pool) {
+    const result = await probeDuration(data);
+    // 比播放进度还短的 不可能是正在播的这条
+    if (!result || result.duration < floor) { continue; }
+    passed.push(result);
+    // 画面尺寸也对得上 就是它了 不用再往下探
+    if (sameSize(result)) { break; }
+  }
+
+  if (!passed.length) {
+    Tips(i18n("locateNoDuration", [media.durationText ?? "?"]), 6000);
+    return;
+  }
+
+  // 优先画面尺寸对得上的 都对不上就取最近到达的(pool 已按时间倒序)
+  const hit = passed.find(sameSize) ?? passed[0];
+  const picked = [hit];
+  // 同组的音轨一起给
+  const mate = hit.group && pool.find(item => item !== hit && item.group === hit.group);
+  mate && picked.push(mate);
+
+  getData().forEach(function (data) {
+    data.checked = picked.includes(data);
+  });
+  mergeDownButton();
+  Tips(i18n("locateDoneRecent", [picked.length, media.durationText ?? "?"]), 5000);
 }
 
 /**

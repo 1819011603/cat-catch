@@ -139,7 +139,7 @@
     }
   },
   "locateDoneRecent": {
-    "message": "Selected $num$ resource(s) from the most recent batch (the page reports no duration, duration = $value$, so this is inferred from arrival time — please verify)",
+    "message": "Selected $num$ resource(s) (the page reports no duration, duration = $value$; picked by \"length >= played seconds + same frame size\" — please verify)",
     "placeholders": {
       "num": {
         "content": "$1"

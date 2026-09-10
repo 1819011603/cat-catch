@@ -139,7 +139,7 @@
     }
   },
   "locateDoneRecent": {
-    "message": "按最近抓到的一组勾选了 $num$ 条（页面报不出总时长，duration = $value$，只能按到达时间推断，请自行确认）",
+    "message": "已勾选 $num$ 条（页面报不出总时长 duration = $value$，改用「播放进度不短于已播秒数 + 画面尺寸相同」筛出，请自行确认）",
     "placeholders": {
       "num": {
         "content": "$1"

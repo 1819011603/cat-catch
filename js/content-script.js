@@ -69,6 +69,62 @@
             const range = function (ranges) {
                 return ranges && ranges.length ? ranges.end(ranges.length - 1) : 0;
             };
+            // 时间文本 mm:ss 或 hh:mm:ss
+            const TIME = "\\d{1,3}:[0-5]\\d(?::[0-5]\\d)?";
+            const TIME_ALL = new RegExp(TIME, "g");
+            // 成对时间 播放器进度条上的 00:22 / 10:37
+            const TIME_PAIR = new RegExp("(" + TIME + ")\\s*/\\s*(" + TIME + ")");
+            const toSeconds = function (text) {
+                const part = text.split(":").map(Number);
+                return part.length == 3 ? part[0] * 3600 + part[1] * 60 + part[2] : part[0] * 60 + part[1];
+            };
+
+            /**
+             * 从播放器界面上的时间文本反推总时长
+             * MSE 播放器把 duration 设成 Infinity 时 元素报不出总时长 但进度条上明明写着 00:22 / 10:37
+             * 一律不认 class / id 选择器 只认文本形状 站点改版也不影响
+             * 靠一条自检站住脚 —— 必须有个时间值跟 currentTime 对得上
+             * 才能说明找到的是播放器自己的时间显示 而不是信息流里别的视频的时长
+             * 两遍
+             *   一 从 video 往上 6 层祖先里找 找到自检通过的那层 取其中最大值
+             *   二 全页找成对时间 A / B 左边跟 currentTime 对得上 右边就是总时长
+             *     抖音的控制栏离 video 很远 6 层罩不住 只能全页找
+             *     全页搜就必须用更具体的形状 成对时间比单个时间具体得多 才不会乱认
+             * @param {HTMLMediaElement} media
+             * @returns {Number} 拿不到返回 0
+             */
+            const uiDuration = function (media) {
+                const current = media.currentTime;
+                // 还没开始播 没有可对照的数 一律不采信
+                if (!(current > 1)) { return 0; }
+                const near = value => Math.abs(value - current) <= 2;
+
+                let node = media.parentElement;
+                for (let level = 0; level < 6 && node; level++, node = node.parentElement) {
+                    const values = [];
+                    node.querySelectorAll("*").forEach(function (element) {
+                        // 只看叶子节点 否则父节点会把整片文本拼在一起 混进无关数字
+                        if (element.children.length) { return; }
+                        const found = element.textContent.match(TIME_ALL);
+                        found && found.forEach(text => values.push(toSeconds(text)));
+                    });
+                    if (!values.length || !values.some(near)) { continue; }
+                    const max = Math.max(...values);
+                    if (max > current) { return max; }
+                }
+
+                for (const element of document.body.querySelectorAll("*")) {
+                    // 只看小块容器 时间显示要么是一个叶子 要么是两三个 span 包在一起
+                    if (element.children.length > 4) { continue; }
+                    const text = element.textContent;
+                    if (!text || text.length > 40) { continue; }
+                    const pair = text.match(TIME_PAIR);
+                    if (!pair) { continue; }
+                    const total = toSeconds(pair[2]);
+                    if (near(toSeconds(pair[1])) && total > current) { return total; }
+                }
+                return 0;
+            };
             const collect = function (root) {
                 root.querySelectorAll("video, audio").forEach(function (media) {
                     // 不能要求 currentSrc 非空
@@ -85,6 +141,7 @@
                         durationText: String(media.duration),
                         seekableEnd: range(media.seekable),
                         bufferedEnd: range(media.buffered),
+                        uiDuration: uiDuration(media),
                         currentTime: media.currentTime,
                         videoWidth: media.videoWidth ?? 0,
                         videoHeight: media.videoHeight ?? 0,
