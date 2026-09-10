@@ -52,7 +52,8 @@ chrome.downloads.onChanged.addListener(function (item) {
   }
 });
 // 复选框状态 点击返回或者全选后 影响新加入的资源 复选框勾选状态
-let checkboxState = true;
+// 默认不勾选 避免一打开就是全选 误触批量下载
+let checkboxState = false;
 
 // 生成资源DOM
 function AddMedia(data, currentTab = true) {
